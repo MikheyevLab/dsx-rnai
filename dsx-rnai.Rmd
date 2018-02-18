@@ -1,0 +1,205 @@
+---
+title: "dsx RNAi"
+author: "Sasha Mikheyev"
+date: "2/16/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(edgeR)
+library(WGCNA)
+library(qvalue)
+library(ggsignif)
+```
+
+## QC
+```{r} 
+counts <- read_csv("data/genes_counts.csv")
+tpm <- read_csv("data/genes_tpm.csv")
+treatments <- read_csv("data/treatments.csv")
+ercc <- left_join(read_tsv("data/ercc.tsv"), tpm) 
+descriptions <- read_tsv("data/descriptions.tsv", col_names = c("gene_id", "description"))
+rownames(descriptions) <- descriptions$gene_id
+mix1 <- ercc[,c("gene_id", "mix1", as.character(subset(treatments, spikein == "mix1")$sample))] %>% gather( library, observed, -c(mix1,gene_id)) %>% dplyr::rename(expected = mix1 )
+mix2 <- ercc[,c("gene_id", "mix2", as.character(subset(treatments, spikein == "mix2")$sample))] %>% gather( library, observed, -mix2, -gene_id) %>% dplyr::rename(expected = mix2 )
+ercc <- rbind(mix1,mix2)
+ggplot(ercc, aes(observed, expected, color=as.factor(library))) + geom_point() + scale_y_continuous(trans='log2')+scale_x_continuous(trans='log2')+ geom_abline()
+
+cutoff <- seq(0,5,by=0.1)
+r <- c()
+for (i in cutoff) {
+  keepGenes <- ercc %>% group_by(gene_id, library) %>% summarise(all_mean = mean(observed)) %>% filter(all_mean > i) %>% .$gene_id %>% unique
+  r <- c(r, summary(lm(log2(observed+1)~log2(expected+1), data=subset(ercc, gene_id %in% keepGenes)))$r.squared)
+}
+plot(cutoff,r)
+```
+
+The signal to noise is basically fine even at the lowest levels
+
+```{r}
+counts <- counts %>% filter(! grepl("ERCC", gene_id))
+design <- model.matrix(~treatment, treatments)
+cds <- DGEList( counts[, c("gene_id", as.character(treatments$sample))] %>% select(-gene_id), group = treatments$treatment)
+dim(cds)
+cds <- calcNormFactors( cds) 
+plotMDS( cds)
+cds <- estimateDisp( cds, design)
+de.tgw <- exactTest( cds , pair = c( "DSX" , "GFP" ) )
+de.tgw$table$gene_id <- counts$gene_id
+de.tgw$table <- left_join(de.tgw$table, descriptions) 
+de.tgw$table$padj <- p.adjust(de.tgw$table$PValue, method = "fdr")
+de.tgw$table %>% filter(padj<0.05)
+de.tgw$table %>% filter(gene_id  == "Dsx")
+de.tgw$table %>% filter(gene_id  == "Vg")
+de.tgw$table %>% filter(gene_id  == "Mrjp1")
+de.tgw$table %>% filter(gene_id  == "Dnmt3")
+
+dsxTest <- function(a,b) return(data.frame(p.value = de.tgw$table %>% filter(gene_id  == "Dsx") %>% .$PValue))
+data.frame(tpm = t(subset(tpm, gene_id == "Dsx")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "dsxTest") + xlab("dsRNA injected")+ylab("TPM")
+
+vgTest <- function(a,b) return(data.frame(p.value = de.tgw$table %>% filter(gene_id  == "Vg") %>% .$PValue))
+data.frame(tpm = t(subset(tpm, gene_id == "Vg")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "vgTest") + xlab("dsRNA injected")+ylab("TPM")
+```
+
+## WGCNA
+
+```{r}
+expDat <- as.data.frame(t(tpm %>% filter(! grepl("ERCC", gene_id)) %>% select(-gene_id)))
+colnames(expDat) <- tpm %>% filter(! grepl("ERCC", gene_id)) %>% .$gene_id
+expDat <- expDat[as.character(treatments$sample),] # re-arrange to match treatments vector
+pickSoftThreshold(expDat, networkType = "unsigned")
+SoftPower = 12
+```
+
+We'll pick sost power 12, which is over the threshold
+
+```{r, cache=TRUE}
+net <- blockwiseModules(expDat, power = SoftPower,
+TOMType = "signed", minModuleSize = 30,
+reassignThreshold = 0, mergeCutHeight = 0.25,
+numericLabels = TRUE, pamRespectsDendro = FALSE,
+saveTOMs = TRUE,
+saveTOMFileBase = "data/tom",
+verbose = 3, maxBlockSize = 15000)
+table(net$colors)
+```
+
+```{r}
+MEs0 <- moduleEigengenes(expDat, net$colors)$eigengenes
+MEs <- orderMEs(MEs0)
+modNames <- substring(names(MEs), 3)
+moduleTraitCor <- cor(MEs, as.numeric(gsub("GFP",0,gsub("DSX",1,treatments$treatment))), method = "spearman");
+moduleTraitPvalue <- corPvalueStudent(moduleTraitCor, 20)
+net$colors[which(colnames(expDat) == "Dsx")]
+net$colors[which(colnames(expDat) %in% pheromoneGenes)]
+descriptions %>% filter(gene_id %in% colnames(expDat)[net$colors == 6] ) %>%  left_join(de.tgw$table)
+```
+There are no global module-trait correlations.
+
+### Exploring _Dsx_-containing module
+```{r}
+MEDsx <- data.frame(ME = MEs[,"ME6"], trt = treatments$treatment) 
+ggplot(MEDsx, aes(trt,ME))+geom_point()
+t.test(ME~trt,data=MEDsx)
+```
+
+###  Intramodular connectivity and gene significance
+
+```{r}
+Alldegrees <- intramodularConnectivity.fromExpr(expDat, net$colors, power = SoftPower)
+rownames(Alldegrees) <- colnames(expDat)
+Alldegrees["Dsx",]
+DsxModuleGenes <- colnames(expDat)[net$colors == 6]
+connectivityDsxModule <- data.frame(kWithin = Alldegrees[DsxModuleGenes,"kWithin"], gene_id = rownames(Alldegrees[DsxModuleGenes,]), moduleMembership = geneModuleMembership[DsxModuleGenes, "ME6"]) %>% left_join(de.tgw$table)
+
+with(connectivityDsxModule, cor.test(logFC, kWithin, method = "s"))
+interestingGenes <- c("Dsx", "Vg", paste0("Mjrp",1:9))
+ggplot(connectivityDsxModule, aes(logFC, kWithin))+geom_point(alpha=0.1) +geom_point(data=subset(connectivityDsxModule, gene_id %in% interestingGenes), colour="red")+theme_bw()+geom_text(data=subset(connectivityDsxModule, gene_id %in% interestingGenes), aes(label = gene_id), nudge_x=.2)
+
+connectivityDsxModule$interesting <- .2
+connectivityDsxModule$interestingLabes <- "" 
+connectivityDsxModule[connectivityDsxModule$gene_id %in% c("Dsx", "Vg", "Dnmt3"),"interesting"] <- 1
+
+with(connectivityDsxModule, scatterD3(x = logFC, y = kWithin, size_var = interesting, size_range = c(30,100), hover_size = 4, hover_opacity = 1, opacity_var = interesting, col_var = interesting , tooltip_text = description, legend_width = 0, xlim=c(-1,3), ylim=c(0,100), xlab = "Log2 fold-count", ylab = "Witin-module connectivity"))
+
+cor.test(Alldegrees[colnames(expDat)[net$colors == 6],"kWithin"], geneTraitSignificance[colnames(expDat)[net$colors == 6],1], method="s")
+plot(Alldegrees[colnames(expDat)[net$colors == 6],"kWithin"], geneTraitSignificance[colnames(expDat)[net$colors == 6],1])
+```
+
+
+```{r}
+DsxConnections <- data.frame(cor = cor(expDat[,net$colors == 6], expDat[, "Dsx"]), annot = descriptions[colnames(expDat[,net$colors == 6]),"description"])
+topGenes <- rownames(DsxConnections)[order(DsxConnections$cor, decreasing = T)[1:50]]
+ADJ <- abs(cor(expDat, use="p"))^SoftPower
+TOM  <- TOMsimilarity(ADJ)
+modTOM <- TOM[net$colors == 6, net$colors == 6]
+dimnames(modTOM) = list(DsxModuleGenes, DsxModuleGenes)
+
+IMConn <- softConnectivity(expDat[, DsxModuleGenes]);
+top <- (rank(-IMConn) <= 30)
+DsxConnections[top,]
+
+vis <- exportNetworkToVisANT(modTOM[topGenes, topGenes], file = "data/VisANTInput.txt", weighted = TRUE, threshold = 0)
+```
+
+## Galbraith _et al._ analysis
+
+```{r}
+galbraith_counts <- read_csv("data/galbraith_genes_counts.csv")
+galbraith_tpm <- read_csv("data/galbraith_genes.tpm.csv")
+galbraith_factors <- read_tsv("data/galbraith_factors.tsv")
+galbraith_design <- model.matrix(~ovary, galbraith_factors)
+galbraith_cds <- DGEList( galbraith_counts[, c("gene_id", galbraith_factors$sample)] %>% select(-gene_id), group = galbraith_factors$ovary)
+galbraith_cds <- calcNormFactors(galbraith_cds) 
+plotMDS(galbraith_cds)
+galbraith_cds <- estimateDisp( galbraith_cds, galbraith_design)
+galbraith_de.tgw <- exactTest( galbraith_cds , pair = c( "active" , "inactive" ) )
+galbraith_de.tgw$table$gene_id <- galbraith_counts$gene_id
+galbraith_de.tgw$table <- left_join(galbraith_de.tgw$table, descriptions) 
+galbraith_de.tgw$table$padj <- p.adjust(galbraith_de.tgw$table$PValue, method = "fdr")
+table(galbraith_de.tgw$table$padj < 0.05)
+View(galbraith_de.tgw %>% filter(padj < 0.05))
+galbraith_de.tgw$table %>% filter(gene_id  == "Dsx")
+galbraith_de.tgw$table %>% filter(gene_id  == "Vg")
+data.frame(counts = as.numeric(galbraith_counts[galbraith_counts$gene_id == "Dsx",galbraith_factors$sample]), ovary =  galbraith_factors$ovary) %>% ggplot(aes(ovary,counts)) +geom_boxplot()+geom_jitter()
+
+data.frame(tpm = as.numeric(galbraith_counts[galbraith_tpm$gene_id == "Dsx",galbraith_factors$sample]), ovary =  galbraith_factors$ovary) %>% ggplot(aes(ovary,tpm)) +geom_boxplot()+geom_jitter()
+```
+
+Unlike in experimental treatmennts _Dsx_ is upregulated in inactive ovaries, _Vg_ is not differentially expressed.
+
+
+```{r}
+expDatGalbraith <- t(galbraith_tpm[,galbraith_factors$sample])
+pickSoftThreshold(expDatGalbraith, networkType = "unsigned")
+SoftPower2 = 8
+```
+
+```{r, cachet = TRUE}
+netGalbraith <- blockwiseModules(expDatGalbraith, power = SoftPower2,
+TOMType = "signed", minModuleSize = 30,
+reassignThreshold = 0, mergeCutHeight = 0.25,
+numericLabels = TRUE, pamRespectsDendro = FALSE,
+saveTOMs = TRUE,
+saveTOMFileBase = "data/tomGalbraith",
+verbose = 3, maxBlockSize = 15000)
+table(netGalbraith$colors)
+netGalbraith$colors[which(galbraith_tpm$gene_id == "Dsx")]
+```
+
+Module 7 contains _Dsx_
+
+```{r}
+Alldegrees2 <- intramodularConnectivity.fromExpr(expDatGalbraith, netGalbraith$colors, power = SoftPower2)
+rownames(Alldegrees2) <- galbraith_tpm$gene_id
+DsxModuleGenes2 <- galbraith_tpm$gene_id[netGalbraith$colors == 7]
+connectivityDsxModule2 <- data.frame(kWithin = Alldegrees[DsxModuleGenes2,"kWithin"], gene_id = rownames(Alldegrees2[DsxModuleGenes2,]), moduleMembership = geneModuleMembership[DsxModuleGenes2, "ME7"]) %>% left_join(galbraith_de.tgw$table)
+
+with(connectivityDsxModule2, cor.test(logFC, kWithin, method="s"))
+phyper()
+```
