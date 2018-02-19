@@ -11,7 +11,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(cache=TRUE)
+knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=5, fig.height=5 )
 ```
 
 ```{r libraries, message = FALSE}
@@ -24,6 +24,8 @@ library(edgeR)    # gene expression
 library(qvalue)   # multiple comparisons
 library(ggsignif) # significance boxplots
 library(scatterD3)# interactive scatterplots
+library(GOstats)
+library(GSEABase)
 allowWGCNAThreads()
 ```
 
@@ -52,6 +54,8 @@ plot(cutoff,r)
 The signal to noise is basically fine even at the lowest levels, so we do not do any abundance-based filtering.
 
 ## Gene expression analysis {.tabset .tabset-fade}
+
+The data are fairly noisy, so we conducted the DGE analysis using two separate alignment/counting philosophies. The more tradional approach uses alignment-based gene quantification using RSEM, and the second one uses a kmer-based approach implemented in Kallisto. Each analysis is shown in a separate tab.
 
 ### RSEM/EdgeR analysis
 
@@ -97,7 +101,7 @@ Actually, the X1 isoform, the one we actually knocked down is significantly lowe
 
 ### Kallisto/Sleuth analysis
 
-```{r kallisto}
+```{r kallistoSleuthTable, cache.rebuild=!file.exists("data/sleuth_table.rds")}
 treatments <- treatments %>% mutate(path = paste0("./data/kallisto/", sample))
 t2g <- read_tsv("data/g2i.tsv", col_names=c('target_id','gene_id', 'description'))
 so <- sleuth_prep(treatments, target_mapping = t2g, aggregation_column = 'gene_id')
@@ -105,8 +109,18 @@ so <- sleuth_fit(so, ~treatment, 'full')
 so <- sleuth_fit(so, ~1, 'reduced')
 so <- sleuth_lrt(so, 'reduced', 'full')
 sleuth_table <- sleuth_results(so, 'reduced:full', 'lrt', show_all = FALSE)
+saveRDS(sleuth_table, "data/sleuth_table.rds")
+```
+
+```{r kallistoSleuthTableLoad, echo = FALSE}
+sleuth_table <- readRDS("data/sleuth_table.rds")
+```
+
+```{r kallistoDsx}
 sleuth_table %>% filter(target_id == "Dsx")
 ```
+
+Both quantification approaches provide the same result, _Dsx_ is upregulated in the control bees, and so is _Vg_ (as predicted).
 
 ## Weighted gene co-expression analysis
 
@@ -122,13 +136,19 @@ SoftPower = 12
 
 We'll pick soft power 12, which is over the 0.8 threshold.
 
-```{r wgcna, cache=TRUE}
+```{r wgcna, cache.rebuild=!file.exists("data/net.rds")}
 net <- blockwiseModules(expDat, power = SoftPower,
 TOMType = "unsigned", minModuleSize = 30,
 reassignThreshold = 0, mergeCutHeight = 0.25,
 numericLabels = TRUE, pamRespectsDendro = FALSE,
 saveTOMs = FALSE,
 verbose = 3, maxBlockSize = 15000)
+saveRDS(net, "data/net.rds")
+```
+
+```{r loadNet, echo = FALSE}
+# load pre-computed network results to save time
+net <- readRDS("data/net.rds")
 ```
 
 ```{r modleTrait}
@@ -196,6 +216,24 @@ with(connectivityDsxModule, scatterD3(x = logFC, y = kWithin, size_var = interes
 
 #### GO term enrichment
 
+```{r go, warning = FALSE}
+go <- read_tsv("data/go.tsv", col_types = c()) %>% mutate(evidence = "ISS") %>% dplyr::select(GO=go, evidence,gene=gene_id)
+universe <- unique(go$gene)
+goFrame <- GOFrame(as.data.frame(go %>% dplyr::filter(gene %in% universe)), organism="Apis melliefera")
+goAllFrame <- GOAllFrame(goFrame)
+gsc <- GeneSetCollection(goAllFrame, setType = GOCollection())
+
+DsxModuleGo <- hyperGTest(GSEAGOHyperGParams(name = "enriched in Dsx module",
+    geneSetCollection=gsc,geneIds = intersect(dsxModuleGenes$gene,universe), universeGeneIds=universe, ontology = "BP",pvalueCutoff = 0.05,conditional = FALSE,testDirection = "over"))
+```
+
+###### Table S2. GO term enrichmed in _Dsx_-responsive module
+
+```{r goTable}
+summary(DsxModuleGo) %>% kable("html") %>% kable_styling() %>%  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = T) %>% scroll_box(height = "400px") 
+```
+
+Virtually all the GO terms enriched in the _Dsx_-responsive module have to do with regulation, and it is full of transcription factors and other regulatory genes. This is expected, given that _Dsx_ is a master regulatory gene.
 
 #### Visualizing genes connected to Dsx.
 
