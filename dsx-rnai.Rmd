@@ -1,13 +1,11 @@
 ---
-title: "dsx RNAi"
+title: "dsx RNA-seq analysis"
 author: "Sasha Mikheyev"
 date: "2/16/2018"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+`r knitr::opts_chunk$set(fig.width=5, fig.height=5, fig.path='figs')`
 
 ```{r}
 library(tidyverse)
@@ -15,11 +13,13 @@ library(edgeR)
 library(WGCNA)
 library(qvalue)
 library(ggsignif)
+library(stargazer)
 ```
 
 ## QC
 ```{r} 
 counts <- read_csv("data/genes_counts.csv")
+go <- read_tsv("data/go.tsv")
 tpm <- read_csv("data/genes_tpm.csv")
 treatments <- read_csv("data/treatments.csv")
 ercc <- left_join(read_tsv("data/ercc.tsv"), tpm) 
@@ -39,7 +39,9 @@ for (i in cutoff) {
 plot(cutoff,r)
 ```
 
-The signal to noise is basically fine even at the lowest levels
+The signal to noise is basically fine even at the lowest levels, so we do not do any abundance-based filtering.
+
+## RSEM/EdgeR analysis
 
 ```{r}
 counts <- counts %>% filter(! grepl("ERCC", gene_id))
@@ -145,61 +147,4 @@ top <- (rank(-IMConn) <= 30)
 DsxConnections[top,]
 
 vis <- exportNetworkToVisANT(modTOM[topGenes, topGenes], file = "data/VisANTInput.txt", weighted = TRUE, threshold = 0)
-```
-
-## Galbraith _et al._ analysis
-
-```{r}
-galbraith_counts <- read_csv("data/galbraith_genes_counts.csv")
-galbraith_tpm <- read_csv("data/galbraith_genes.tpm.csv")
-galbraith_factors <- read_tsv("data/galbraith_factors.tsv")
-galbraith_design <- model.matrix(~ovary, galbraith_factors)
-galbraith_cds <- DGEList( galbraith_counts[, c("gene_id", galbraith_factors$sample)] %>% select(-gene_id), group = galbraith_factors$ovary)
-galbraith_cds <- calcNormFactors(galbraith_cds) 
-plotMDS(galbraith_cds)
-galbraith_cds <- estimateDisp( galbraith_cds, galbraith_design)
-galbraith_de.tgw <- exactTest( galbraith_cds , pair = c( "active" , "inactive" ) )
-galbraith_de.tgw$table$gene_id <- galbraith_counts$gene_id
-galbraith_de.tgw$table <- left_join(galbraith_de.tgw$table, descriptions) 
-galbraith_de.tgw$table$padj <- p.adjust(galbraith_de.tgw$table$PValue, method = "fdr")
-table(galbraith_de.tgw$table$padj < 0.05)
-View(galbraith_de.tgw %>% filter(padj < 0.05))
-galbraith_de.tgw$table %>% filter(gene_id  == "Dsx")
-galbraith_de.tgw$table %>% filter(gene_id  == "Vg")
-data.frame(counts = as.numeric(galbraith_counts[galbraith_counts$gene_id == "Dsx",galbraith_factors$sample]), ovary =  galbraith_factors$ovary) %>% ggplot(aes(ovary,counts)) +geom_boxplot()+geom_jitter()
-
-data.frame(tpm = as.numeric(galbraith_counts[galbraith_tpm$gene_id == "Dsx",galbraith_factors$sample]), ovary =  galbraith_factors$ovary) %>% ggplot(aes(ovary,tpm)) +geom_boxplot()+geom_jitter()
-```
-
-Unlike in experimental treatmennts _Dsx_ is upregulated in inactive ovaries, _Vg_ is not differentially expressed.
-
-
-```{r}
-expDatGalbraith <- t(galbraith_tpm[,galbraith_factors$sample])
-pickSoftThreshold(expDatGalbraith, networkType = "unsigned")
-SoftPower2 = 8
-```
-
-```{r, cachet = TRUE}
-netGalbraith <- blockwiseModules(expDatGalbraith, power = SoftPower2,
-TOMType = "signed", minModuleSize = 30,
-reassignThreshold = 0, mergeCutHeight = 0.25,
-numericLabels = TRUE, pamRespectsDendro = FALSE,
-saveTOMs = TRUE,
-saveTOMFileBase = "data/tomGalbraith",
-verbose = 3, maxBlockSize = 15000)
-table(netGalbraith$colors)
-netGalbraith$colors[which(galbraith_tpm$gene_id == "Dsx")]
-```
-
-Module 7 contains _Dsx_
-
-```{r}
-Alldegrees2 <- intramodularConnectivity.fromExpr(expDatGalbraith, netGalbraith$colors, power = SoftPower2)
-rownames(Alldegrees2) <- galbraith_tpm$gene_id
-DsxModuleGenes2 <- galbraith_tpm$gene_id[netGalbraith$colors == 7]
-connectivityDsxModule2 <- data.frame(kWithin = Alldegrees[DsxModuleGenes2,"kWithin"], gene_id = rownames(Alldegrees2[DsxModuleGenes2,]), moduleMembership = geneModuleMembership[DsxModuleGenes2, "ME7"]) %>% left_join(galbraith_de.tgw$table)
-
-with(connectivityDsxModule2, cor.test(logFC, kWithin, method="s"))
-phyper()
 ```

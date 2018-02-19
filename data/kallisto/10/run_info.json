@@ -1,0 +1,13 @@
+{
+	"n_targets": 28739,
+	"n_bootstraps": 100,
+	"n_processed": 20426967,
+	"n_pseudoaligned": 10982669,
+	"n_unique": 7182163,
+	"p_pseudoaligned": 53.8,
+	"p_unique": 35.2,
+	"kallisto_version": "0.44.0",
+	"index_version": 10,
+	"start_time": "Fri Feb 16 11:06:23 2018",
+	"call": "kallisto quant -t 4 --single -s 100 -l 350 -b 100 -i ref/hbee -o /work/MikheyevU/sasha/dsx-rnai/data/kallisto/10 /work/MikheyevU/sasha/dsx-rnai/data/reads_trimmed/10.fastq.gz"
+}
