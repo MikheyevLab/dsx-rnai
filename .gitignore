@@ -1,3 +1,6 @@
 data/*.RData
 .Rproj.user/
 .Rhistory
+dsx-rnai_cache/
+dsx-rnai_files/
+figsunnamed-chunk-*.png
