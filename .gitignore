@@ -5,3 +5,4 @@ data/*.rds
 dsx-rnai_cache/
 dsx-rnai_files/
 *.pdf
+.Rproj.user

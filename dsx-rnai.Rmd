@@ -103,7 +103,7 @@ Actually, the X1 isoform, the one we actually knocked down is significantly lowe
 
 ### Kallisto/Sleuth analysis
 
-```{r kallistoSleuthTable, cache.rebuild=!file.exists("data/sleuth_table.rds")}
+```{r kallistoSleuthTable, eval = F}
 treatments <- treatments %>% mutate(path = paste0("./data/kallisto/", sample))
 t2g <- read_tsv("data/g2i.tsv", col_names=c('target_id','gene_id', 'description'))
 so <- sleuth_prep(treatments, target_mapping = t2g, aggregation_column = 'gene_id')
@@ -129,7 +129,7 @@ Both quantification approaches provide the same result, _Dsx_ is upregulated in 
 We are interested in understanding the netwoks of genes co-expressed with _Dsx_ in honey bees, and to checke whether this network is associated with RNAi treatment. 
 
 ```{r pickSoftThreshold, warning=FALSE}
-expDat <- as.data.frame(t(tpm %>% filter(! grepl("ERCC", gene_id)) %>% select(-gene_id)))
+expDat <- as.data.frame(t(tpm %>% filter(! grepl("ERCC", gene_id)) %>% dplyr::select(-gene_id)))
 colnames(expDat) <- tpm %>% filter(! grepl("ERCC", gene_id)) %>% .$gene_id
 expDat <- expDat[as.character(treatments$sample),] # re-arrange to match treatments vector
 pickSoftThreshold(expDat, RsquaredCut = 0.8, networkType = "unsigned")$powerEstimate
@@ -138,7 +138,7 @@ SoftPower = 12
 
 We'll pick soft power 12, which is over the 0.8 threshold.
 
-```{r wgcna, cache.rebuild=!file.exists("data/net.rds")}
+```{r wgcna, eval = F}
 net <- blockwiseModules(expDat, power = SoftPower,
 TOMType = "unsigned", minModuleSize = 30,
 reassignThreshold = 0, mergeCutHeight = 0.25,
@@ -178,7 +178,7 @@ connectivityDsxModule <- data.frame(kWithin = Alldegrees[DsxModuleGenes,"kWithin
 ```
 
 ```{r dsxModuleGenes}
-dsxModuleGenes <- descriptions %>% filter(gene_id %in% colnames(expDat)[net$colors == DsxModule] ) %>% left_join(de.tgw$table, by = "gene_id") %>% left_join(connectivityDsxModule %>% select(gene_id, kWithin), by="gene_id") %>% select(gene = gene_id, description = description.x, logFC, kWithin, logCPM) %>% arrange(desc(logFC))  
+dsxModuleGenes <- descriptions %>% filter(gene_id %in% colnames(expDat)[net$colors == DsxModule] ) %>% left_join(de.tgw$table, by = "gene_id") %>% left_join(connectivityDsxModule %>% dplyr::select(gene_id, kWithin), by="gene_id") %>% dplyr::select(gene = gene_id, description = description.x, logFC, kWithin, logCPM) %>% arrange(desc(logFC))  
 highligh <- which(dsxModuleGenes$gene %in% c("Vg", "Dsx", "Dnmt3"))
 ```
 ##### Table S1. Genes in the _Dsx_-responsive module{.tabset .tabset-fade}
@@ -268,7 +268,7 @@ edges$value <- edges$value/max(edges$value)*3
 nodes <- data.frame(name = rownames(DsxConnections[topGenes,]), description = DsxConnections[topGenes,"description"], color = c(c("red"),rep("grey", maxTopGenes - 1)), logCPM = de.tgw$table[match(topGenes,de.tgw$table$gene_id),"logCPM"])
 forceNetwork(Links = edges, Nodes = nodes,
             Source = "source", Target = "target",
-            Value = "value", NodeID = "description",  fontSize = 18, colourScale = JS("d3.scaleOrdinal(d3.schemeCategory20);"), linkDistance = 100, linkWidth =  JS("function(d) { return d.value; }"), Nodesize = "logCPM", radiusCalculation = JS("d.nodesize+3"), fontFamily = "arial", Group = "color", opacity = 0.8, width = 500, height = 500)
+            Value = "value", NodeID = "description",  fontSize = 18, linkDistance = 100, linkWidth =  JS("function(d) { return d.value; }"),colourScale = JS("d3.scaleOrdinal(d3.schemeCategory20);"), Nodesize = "logCPM", radiusCalculation = JS("d.nodesize+3"), fontFamily = "arial", Group = "color", opacity = 0.8, width = 500, height = 500)
 ```
 
 ### Session info
