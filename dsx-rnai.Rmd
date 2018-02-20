@@ -14,7 +14,7 @@ output:
 knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=5, fig.height=5 )
 ```
 
-```{r libraries, message = FALSE}
+```{r libraries, message = FALSE, warning=FALSE}
 library(tidyverse)
 library(knitr)
 library(kableExtra)
@@ -240,7 +240,7 @@ Virtually all the GO terms enriched in the _Dsx_-responsive module have to do wi
 #### Visualizing genes connected to Dsx.
 ```{r networkPlotPrep, eval = F}
 maxTopGenes <- 30
-DsxConnections <- data.frame(cor = cor(expDat[,net$colors == DsxModule], expDat[, "Dsx"]), annot = descriptions[colnames(expDat[,net$colors == DsxModule]),"description"])
+DsxConnections <- data.frame(cor = cor(expDat[,net$colors == DsxModule], expDat[, "Dsx"]), annot = descriptions$description[match(colnames(expDat[,net$colors == DsxModule]), descriptions$gene_id)])
 topGenes <- rownames(DsxConnections)[order(DsxConnections$cor, decreasing = T)[1:maxTopGenes]]
 ADJ <- abs(cor(expDat, use="p"))^SoftPower
 TOM  <- TOMsimilarity(ADJ)
@@ -251,7 +251,7 @@ saveRDS(modTOM, "data/modTOM.rds")
 
 ```{r loadTOM, echo = FALSE}
 maxTopGenes <- 30
-DsxConnections <- data.frame(cor = cor(expDat[,net$colors == DsxModule], expDat[, "Dsx"]), annot = descriptions[colnames(expDat[,net$colors == DsxModule]),"description"])
+DsxConnections <- data.frame(cor = cor(expDat[,net$colors == DsxModule], expDat[, "Dsx"]), annot = descriptions$description[match(colnames(expDat[,net$colors == DsxModule]), descriptions$gene_id)])
 topGenes <- rownames(DsxConnections)[order(DsxConnections$cor, decreasing = T)[1:maxTopGenes]]
 modTOM <- readRDS("data/modTOM.rds")
 ```
@@ -265,10 +265,10 @@ for (i in 1:maxTopGenes)
     if (modTOM[i,j]>.07 & i != j) edges <- rbind(edges, data.frame(source = i-1, target = j-1, value = modTOM[i,j]))
 edges$value <- edges$value/max(edges$value)*3
 
-nodes <- data.frame(name = rownames(DsxConnections[topGenes,]), description = DsxConnections[topGenes,"description"], color = c(c("red"),rep("grey", maxTopGenes - 1)), logCPM = de.tgw$table[match(topGenes,de.tgw$table$gene_id),"logCPM"])
+nodes <- data.frame(name = rownames(DsxConnections[topGenes,]), description = DsxConnections[topGenes,"annot"], color = c(c("red"),rep("grey", maxTopGenes - 1)), logCPM = de.tgw$table[match(topGenes,de.tgw$table$gene_id),"logCPM"])
 forceNetwork(Links = edges, Nodes = nodes,
             Source = "source", Target = "target",
-            Value = "value", NodeID = "description",  fontSize = 18, linkDistance = 100, linkWidth =  JS("function(d) { return d.value; }"),colourScale = JS("d3.scaleOrdinal(d3.schemeCategory20);"), Nodesize = "logCPM", radiusCalculation = JS("d.nodesize+3"), fontFamily = "arial", Group = "color", opacity = 0.8, width = 500, height = 500)
+            Value = "value", NodeID = "description",  fontSize = 18, linkDistance = 150, linkWidth =  JS("function(d) { return d.value; }"),colourScale = JS("d3.scaleOrdinal(d3.schemeCategory20);"), Nodesize = "logCPM", radiusCalculation = JS("d.nodesize+3"), fontFamily = "arial", Group = "color", opacity = 0.8, width = 500, height = 500)
 ```
 
 ### Session info
