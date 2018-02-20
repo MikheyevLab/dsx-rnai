@@ -34,7 +34,6 @@ allowWGCNAThreads()
 ## QC using RSEM data
 ```{r qc, message = FALSE} 
 counts <- read_csv("data/genes_counts.csv")
-go <- read_tsv("data/go.tsv")
 tpm <- read_csv("data/genes_tpm.csv")
 treatments <- read_csv("data/treatments.csv", col_types = "ccc")
 ercc <- left_join(read_tsv("data/ercc.tsv"), tpm, by = "gene_id") 
@@ -42,7 +41,7 @@ descriptions <- read_tsv("data/descriptions.tsv", col_names = c("gene_id", "desc
 mix1 <-  ercc[,c("gene_id", "mix1", subset(treatments, spikein == "mix1")$sample)] %>% gather( library, observed, -c(mix1,gene_id)) %>% dplyr::rename(expected = mix1 )
 mix2 <- ercc[,c("gene_id", "mix2", as.character(subset(treatments, spikein == "mix2")$sample))] %>% gather( library, observed, -mix2, -gene_id) %>% dplyr::rename(expected = mix2 )
 ercc <- rbind(mix1,mix2)
-ggplot(ercc, aes(observed, expected, color=as.factor(library))) + geom_point() + scale_y_continuous(trans='log2')+scale_x_continuous(trans='log2')+ geom_abline()+guides(color=F)
+ggplot(ercc, aes(observed+1, expected+1, color=as.factor(library))) + geom_point() + scale_y_continuous(trans='log2')+scale_x_continuous(trans='log2')+ geom_abline()+guides(color=F)
 
 cutoff <- seq(0,5,by=0.1)
 r <- c()
@@ -258,7 +257,7 @@ modTOM <- readRDS("data/modTOM.rds")
 
 ##### Figure S2. Interactive network of _Dsx_-connected genes
 This network shows the 30 genes most highly connected to _Dsx, with edge weights proportional to the strength of the connection, and node areas to log counts per million.
-```{r networkPlot}
+```{r networkPlot, echo = FALSE}
 edges <- data.frame(source = c(), target = c(), value = c())
 for (i in 1:maxTopGenes)
   for (j in i:maxTopGenes)
