@@ -24,8 +24,10 @@ library(edgeR)    # gene expression
 library(qvalue)   # multiple comparisons
 library(ggsignif) # significance boxplots
 library(scatterD3)# interactive scatterplots
-library(GOstats)
-library(GSEABase)
+library(networkD3)# interactive networks
+library(GOstats)  # GO terms
+library(GSEABase) # GO terms
+library(devtools) #better session info
 allowWGCNAThreads()
 ```
 
@@ -217,7 +219,7 @@ with(connectivityDsxModule, scatterD3(x = logFC, y = kWithin, size_var = interes
 #### GO term enrichment
 
 ```{r go, warning = FALSE}
-go <- read_tsv("data/go.tsv", col_types = c()) %>% mutate(evidence = "ISS") %>% dplyr::select(GO=go, evidence,gene=gene_id)
+go <- read_tsv("data/go.tsv", col_types = cols()) %>% mutate(evidence = "ISS") %>% dplyr::select(GO=go, evidence,gene=gene_id)
 universe <- unique(go$gene)
 goFrame <- GOFrame(as.data.frame(go %>% dplyr::filter(gene %in% universe)), organism="Apis melliefera")
 goAllFrame <- GOAllFrame(goFrame)
@@ -230,24 +232,48 @@ DsxModuleGo <- hyperGTest(GSEAGOHyperGParams(name = "enriched in Dsx module",
 ###### Table S2. GO term enrichmed in _Dsx_-responsive module
 
 ```{r goTable}
-summary(DsxModuleGo) %>% kable("html") %>% kable_styling() %>%  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = T) %>% scroll_box(height = "400px") 
+summary(DsxModuleGo) %>% kable("html", digits = 3) %>% kable_styling() %>%  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = T) %>% scroll_box(height = "400px") 
 ```
 
 Virtually all the GO terms enriched in the _Dsx_-responsive module have to do with regulation, and it is full of transcription factors and other regulatory genes. This is expected, given that _Dsx_ is a master regulatory gene.
 
 #### Visualizing genes connected to Dsx.
-
-```{r eval = FALSE}
+```{r networkPlotPrep, eval = F}
+maxTopGenes <- 30
 DsxConnections <- data.frame(cor = cor(expDat[,net$colors == DsxModule], expDat[, "Dsx"]), annot = descriptions[colnames(expDat[,net$colors == DsxModule]),"description"])
-topGenes <- rownames(DsxConnections)[order(DsxConnections$cor, decreasing = T)[1:50]]
+topGenes <- rownames(DsxConnections)[order(DsxConnections$cor, decreasing = T)[1:maxTopGenes]]
 ADJ <- abs(cor(expDat, use="p"))^SoftPower
 TOM  <- TOMsimilarity(ADJ)
 modTOM <- TOM[net$colors == DsxModule, net$colors == DsxModule]
 dimnames(modTOM) = list(DsxModuleGenes, DsxModuleGenes)
+saveRDS(modTOM, "data/modTOM.rds")
+```
 
-IMConn <- softConnectivity(expDat[, DsxModuleGenes]);
-top <- (rank(-IMConn) <= 30)
-DsxConnections[top,]
+```{r loadTOM, echo = FALSE}
+maxTopGenes <- 30
+DsxConnections <- data.frame(cor = cor(expDat[,net$colors == DsxModule], expDat[, "Dsx"]), annot = descriptions[colnames(expDat[,net$colors == DsxModule]),"description"])
+topGenes <- rownames(DsxConnections)[order(DsxConnections$cor, decreasing = T)[1:maxTopGenes]]
+modTOM <- readRDS("data/modTOM.rds")
+```
 
-vis <- exportNetworkToVisANT(modTOM[topGenes, topGenes], file = "data/VisANTInput.txt", weighted = TRUE, threshold = 0)
+##### Figure S2. Interactive network of _Dsx_-connected genes
+This network shows the 30 genes most highly connected to _Dsx, with edge weights proportional to the strength of the connection, and node areas to log counts per million.
+```{r networkPlot}
+edges <- data.frame(source = c(), target = c(), value = c())
+for (i in 1:maxTopGenes)
+  for (j in i:maxTopGenes)
+    if (modTOM[i,j]>.07 & i != j) edges <- rbind(edges, data.frame(source = i-1, target = j-1, value = modTOM[i,j]))
+edges$value <- edges$value/max(edges$value)*3
+
+nodes <- data.frame(name = rownames(DsxConnections[topGenes,]), description = DsxConnections[topGenes,"description"], color = c(c("red"),rep("grey", maxTopGenes - 1)), logCPM = de.tgw$table[match(topGenes,de.tgw$table$gene_id),"logCPM"])
+forceNetwork(Links = edges, Nodes = nodes,
+            Source = "source", Target = "target",
+            Value = "value", NodeID = "description",  fontSize = 18, colourScale = JS("d3.scaleOrdinal(d3.schemeCategory20);"), linkDistance = 100, linkWidth =  JS("function(d) { return d.value; }"), Nodesize = "logCPM", radiusCalculation = JS("d.nodesize+3"), fontFamily = "arial", Group = "color", opacity = 0.8, width = 500, height = 500)
+```
+
+### Session info
+```{r sessioninfo, echo=F}
+sessionInfo <- devtools::session_info() 
+sessionInfo$platform 
+sessionInfo$packages %>% kable("html") %>% kable_styling() %>% scroll_box(height = "400px") 
 ```
