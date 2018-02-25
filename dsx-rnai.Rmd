@@ -18,7 +18,6 @@ knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=5, fig.height=5
 library(tidyverse)
 library(knitr)
 library(kableExtra)
-library(WGCNA)    # gene co-expression
 library(sleuth)   # gene expression
 library(edgeR)    # gene expression
 library(qvalue)   # multiple comparisons
@@ -28,6 +27,7 @@ library(networkD3)# interactive networks
 library(GOstats)  # GO terms
 library(GSEABase) # GO terms
 library(devtools) #better session info
+library(WGCNA)    # gene co-expression
 allowWGCNAThreads()
 ```
 
@@ -98,7 +98,7 @@ deIso.tgw$table$isoform_id <- isoforms$isoform_id
 kable(deIso.tgw$table %>% filter(isoform_id %in% dsxIsoforms$isoform_id) %>% left_join(dsxIsoforms, by = "isoform_id"))
 ```
 
-Actually, the X1 isoform, the one we actually knocked down is significantly lower in the GFP-treated bees (using a one-tailed test).
+Actually, the X1 isoform, the one we actually knocked down is significantly lower in the _Dsx_ RNAi-treated bees (using a one-tailed test).
 
 ### Kallisto/Sleuth analysis
 
@@ -270,7 +270,114 @@ forceNetwork(Links = edges, Nodes = nodes,
             Value = "value", NodeID = "description",  fontSize = 18, linkDistance = 150, linkWidth =  JS("function(d) { return d.value; }"),colourScale = JS("d3.scaleOrdinal(d3.schemeCategory20);"), Nodesize = "logCPM", radiusCalculation = JS("d.nodesize+3"), fontFamily = "arial", Group = "color", opacity = 0.8, width = 500, height = 500)
 ```
 
-### Session info
+## Comparisons with other studies
+
+### A comparison of honeybee (_Apis mellifera_) queen, worker and drone larvae by RNA-Seq ([He et al. 2017](http://onlinelibrary.wiley.com/doi/10.1111/1744-7917.12557/full/))
+
+This is a well-replicated data set on early development across castes. They did not find _dsx_ differential expression when they looked at their data.
+
+```{r heDGE}
+heCounts <- read_csv("data/he_genes_counts.csv.gz", col_types = cols()) %>% filter(! grepl("ERCC", gene_id))
+heTPM <- read_csv("data/he_tpm.csv.gz", col_types = cols()) %>% filter(! grepl("ERCC", gene_id))
+heFactors <- read_tsv("data/he_factors.tsv", col_types = cols()) %>% filter(sex == "female")
+design <- model.matrix(~caste, heFactors)
+cdsHe <- DGEList( heCounts[,  heFactors$sample] , group = heFactors$caste)
+cdsHe <- calcNormFactors( cdsHe) 
+mdsPlot <- plotMDS( cdsHe, labels = paste(heFactors$caste, "_", heFactors$age))
+cdsHe <- estimateDisp( cdsHe, design)
+deHe.tgw <- exactTest( cdsHe , pair = c( "worker" , "queen" ) )
+deHe.tgw$table$gene_id <- heCounts$gene_id
+deHe.tgw$table <- left_join(deHe.tgw$table, descriptions, by = "gene_id") 
+
+# positive logFC means upregulated in the worker
+deHe.tgw$table %>% filter(gene_id  == "Dsx")
+deHe.tgw$table %>% filter(gene_id  == "Vg")
+deHe.tgw$table %>% filter(gene_id  == "Mrjp1")
+deHe.tgw$table %>% filter(gene_id  == "Dnmt3")
+
+data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "Mrjp1") %>% dplyr::select(heFactors$sample))), caste = heFactors$caste) %>% ggplot(aes(caste,tpm))+geom_boxplot()+ggtitle("Mrjp1")
+data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "Vg") %>% dplyr::select(heFactors$sample))), caste = heFactors$caste) %>% ggplot(aes(caste,tpm))+geom_boxplot()+ggtitle("Vg")
+```
+The MDS plot is really nice, you can see how the castes start slighly different and then become progressively more so. As reported by He _et al._ there is no differential expression in the 
+
+```{r heIsoforms}
+dsxIsoforms <- tibble(isoform_id = c("NM_001111255.1", "NM_001134935.1", "NM_001134936.1", "NR_024131.1" ,"XM_006560013.2"), description = c("M", "F2", "B", "RNA", "X1"))
+heIsoforms <- read_csv("data/he_isoforms_counts.csv.gz", col_types = cols()) %>% filter(! grepl("ERCC", isoform_id))
+heCdsIso <- DGEList( heIsoforms[, heFactors$sample], group = heFactors$caste)
+heCdsIso <- calcNormFactors( heCdsIso) 
+heCdsIso <- estimateDisp( heCdsIso, design)
+heCdsIso.tgw <- exactTest( heCdsIso , pair = c( "worker" , "queen" ) )
+heCdsIso.tgw$table$isoform_id <- heIsoforms$isoform_id
+kable(heCdsIso.tgw$table %>% filter(isoform_id %in% dsxIsoforms$isoform_id) %>% left_join(dsxIsoforms, by = "isoform_id"))
+```
+
+As reported by the authors, _Dsx_ is not differentially expressed by caste. However, even in our experiment, the difference is marginal, so we should look in some greater detail at other associated genes.
+
+```{r hePickSoftThreshold, warning=FALSE}
+heExpDat <- as.data.frame(t(heTPM[,-1]))
+colnames(heExpDat) <- heTPM$gene_id
+pickSoftThreshold(heExpDat, RsquaredCut = 0.8, networkType = "unsigned")$powerEstimate
+```
+
+It is pretty close to what we have in the other network, and we'll use the same power 12
+
+```{r heWGNCA, eval = FALSE}
+heNet <- blockwiseModules(heExpDat, power = 12,
+TOMType = "unsigned", minModuleSize = 30,
+reassignThreshold = 0, mergeCutHeight = 0.25,
+numericLabels = TRUE, pamRespectsDendro = FALSE,
+saveTOMs = FALSE,
+verbose = 3, maxBlockSize = 15000)
+saveRDS(heNet, "data/he_net.rds")
+```
+
+```{r heWGNCAload, echo =F}
+heNet <- readRDS("data/he_net.rds")
+```
+
+Do the _Dsx_ containing modules overlap between studies
+```{r modulePhyper}
+heAlldegrees <- intramodularConnectivity.fromExpr(heExpDat, heNet$colors, power = 12)
+heAlldegrees$gene_id <- colnames(heExpDat)
+(heDsxModule <- heNet$colors[which(colnames(heExpDat) == "Dsx")])
+heDsxModuleGenes <- colnames(heExpDat)[heNet$colors == heDsxModule]
+
+bothDsx <- table(net$colors == DsxModule & heNet$colors == heDsxModule)[2]
+heDsx <- table(heNet$colors == heDsxModule)[2]
+ourDsx <- table(net$colors == DsxModule)[2]
+phyper(bothDsx, ourDsx, table(net$colors == DsxModule)[1], heDsx, lower.tail = F)
+sum(bothDsx)/sum(ourDsx)
+
+heDsxModuleGenes <- descriptions %>% filter(gene_id %in% colnames(heExpDat)[heNet$colors == heDsxModule] ) %>% left_join(deHe.tgw$table, by = "gene_id") %>% left_join(heAlldegrees %>% dplyr::select(gene_id, kWithin), by="gene_id") %>% dplyr::select(gene = gene_id, description = description.x, logFC, kWithin, logCPM) %>% arrange(desc(logFC))  
+highligh <- which(heDsxModuleGenes$gene %in% colnames(heExpDat)[net$colors == DsxModule])
+heDsxModuleGenes  %>% arrange(desc(kWithin)) %>% kable(format = "html", caption = "Genes in the Dsx-containing module from He et al. Higher values of logFC correspond to greater expression in queens Genes also found in the Dsx-responsive module from the RNAi experiment are highlighted in yellow") %>% row_spec(highligh, bold = T, background = "#FFFF00") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>% scroll_box(height = "400px") 
+```
+
+Yes, roughly half of the genes in the _Dsx_-responsive module form the RNAi experiment are found in the _Dsx_-containing module determined from larval gene expression.
+
+Now, is the _Dsx_-containig module associated with caste-biased gene expression?
+
+```{r casteBias}
+# module membership vs logFC
+cor.test(heAlldegrees$kWithin[net$colors == heDsxModule], deHe.tgw$table$logFC[net$colors == heDsxModule], method = "s")
+
+#logFC in experimental vs developmental modules
+with(left_join(deHe.tgw$table[heNet$colors == heDsxModule,],de.tgw$table[net$colors == DsxModule,] %>% dplyr::select(gene_id, logFC), by = "gene_id") %>% na.omit(), cor.test(logFC.x, logFC.y, method="s"))
+```
+
+This means that the _Dsx_-containing module is associated with queen-upregulated genes during development. The number of genes that overlap in the two modules is not very large, but their logFC are (negatively) correlated.
+
+```{r echo=F, eval=F}
+# Sanity checking to make sure the log-fold orintation makes sense
+data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "Or30") %>% dplyr::select(heFactors$sample))), caste = heFactors$caste) %>% ggplot(aes(caste,tpm))+geom_boxplot()+ggtitle("Or30") # strongly positve log-fold gene
+
+data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "LOC410743") %>% dplyr::select(heFactors$sample))), caste = heFactors$caste) %>% ggplot(aes(caste,tpm))+geom_boxplot()+ggtitle("LOC410743") # strongly negative log-fold gene
+
+#yep, queens have positive log-fold changes. This is lined up with the experimental log-fold, where control bees were expected to be more queen-like in ovarian development.
+```
+
+
+## Session info
 ```{r sessioninfo, echo=F}
 sessionInfo <- devtools::session_info() 
 sessionInfo$platform 
