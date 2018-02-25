@@ -298,6 +298,7 @@ deHe.tgw$table %>% filter(gene_id  == "Dnmt3")
 data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "Mrjp1") %>% dplyr::select(heFactors$sample))), caste = heFactors$caste) %>% ggplot(aes(caste,tpm))+geom_boxplot()+ggtitle("Mrjp1")
 data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "Vg") %>% dplyr::select(heFactors$sample))), caste = heFactors$caste) %>% ggplot(aes(caste,tpm))+geom_boxplot()+ggtitle("Vg")
 ```
+
 The MDS plot is really nice, you can see how the castes start slighly different and then become progressively more so. As reported by He _et al._ there is no differential expression in the 
 
 ```{r heIsoforms}
@@ -319,7 +320,7 @@ colnames(heExpDat) <- heTPM$gene_id
 pickSoftThreshold(heExpDat, RsquaredCut = 0.8, networkType = "unsigned")$powerEstimate
 ```
 
-It is pretty close to what we have in the other network, and we'll use the same power 12
+The soft threshold creeps up after getting to almost 0.8. It is pretty close to what we have in the other network, and we'll use the same power as for the experimental network, 12.
 
 ```{r heWGNCA, eval = FALSE}
 heNet <- blockwiseModules(heExpDat, power = 12,
