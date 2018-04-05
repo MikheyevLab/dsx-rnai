@@ -6,3 +6,6 @@ dsx-rnai_cache/
 dsx-rnai_files/
 *.pdf
 .Rproj.user
+Models/
+figures/*
+pheromone\ analysis/*
