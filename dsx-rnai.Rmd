@@ -1,7 +1,5 @@
 ---
-title: "dsx RNA-seq analysis"
-author: "Sasha Mikheyev"
-date: "2/16/2018"
+title: "dsx knockdown analysis"
 output:
   html_document:
     toc: true
@@ -28,8 +26,15 @@ library(GOstats)  # GO terms
 library(GSEABase) # GO terms
 library(devtools) #better session info
 library(WGCNA)    # gene co-expression
+library(RRHO)     # correlation between ranked gene lists EXPERIMENTAL
+library(ggbiplot) # pca plot
+library(ordinal)  # clmm2
+library(MASS)     # rlm for plotting
+
 allowWGCNAThreads()
 ```
+
+# RNA-seq analysis
 
 ## QC using RSEM data
 ```{r qc, message = FALSE} 
@@ -318,12 +323,11 @@ As reported by the authors, _Dsx_ is not differentially expressed by caste. Howe
 heExpDat <- as.data.frame(t(heTPM[,-1]))
 colnames(heExpDat) <- heTPM$gene_id
 pickSoftThreshold(heExpDat, RsquaredCut = 0.8, networkType = "unsigned")$powerEstimate
+heSoftPower <- 18
 ```
 
-The soft threshold creeps up after getting to almost 0.8. It is pretty close to what we have in the other network, and we'll use the same power as for the experimental network, 12.
-
 ```{r heWGNCA, eval = FALSE}
-heNet <- blockwiseModules(heExpDat, power = 12,
+heNet <- blockwiseModules(heExpDat, power = heSoftPower,
 TOMType = "unsigned", minModuleSize = 30,
 reassignThreshold = 0, mergeCutHeight = 0.25,
 numericLabels = TRUE, pamRespectsDendro = FALSE,
@@ -338,7 +342,7 @@ heNet <- readRDS("data/he_net.rds")
 
 Do the _Dsx_ containing modules overlap between studies
 ```{r modulePhyper}
-heAlldegrees <- intramodularConnectivity.fromExpr(heExpDat, heNet$colors, power = 12)
+heAlldegrees <- intramodularConnectivity.fromExpr(heExpDat, heNet$colors, power = heSoftPower)
 heAlldegrees$gene_id <- colnames(heExpDat)
 (heDsxModule <- heNet$colors[which(colnames(heExpDat) == "Dsx")])
 heDsxModuleGenes <- colnames(heExpDat)[heNet$colors == heDsxModule]
@@ -360,25 +364,62 @@ Now, is the _Dsx_-containig module associated with caste-biased gene expression?
 
 ```{r casteBias}
 # module membership vs logFC
-cor.test(heAlldegrees$kWithin[net$colors == heDsxModule], deHe.tgw$table$logFC[net$colors == heDsxModule], method = "s")
+cor.test(heAlldegrees$kWithin[heNet$colors == heDsxModule], deHe.tgw$table$logFC[heNet$colors == heDsxModule], method = "s")
+
+# module membership vs logFC in 
+cor.test(heAlldegrees$kWithin[net$colors == DsxModule], deHe.tgw$table$logFC[net$colors == DsxModule], method = "s")
 
 #logFC in experimental vs developmental modules
-with(left_join(deHe.tgw$table[heNet$colors == heDsxModule,],de.tgw$table[net$colors == DsxModule,] %>% dplyr::select(gene_id, logFC), by = "gene_id") %>% na.omit(), cor.test(logFC.x, logFC.y, method="s"))
+bothModules <- left_join(deHe.tgw$table[heNet$colors == heDsxModule,],de.tgw$table[net$colors == DsxModule,] %>% dplyr::select(gene_id, logFC), by = "gene_id") %>% na.omit()
+with(bothModules, cor.test(logFC.x, logFC.y, method="s"))
 ```
 
 This means that the _Dsx_-containing module is associated with queen-upregulated genes during development. The number of genes that overlap in the two modules is not very large, but their logFC are (negatively) correlated.
 
+```{r RRHO }
+rrho.test <- RRHO(bothModules[,c("gene_id", "logFC.x")], bothModules[,c("gene_id", "logFC.y")], BY=TRUE, alternative='two.sided', labels = c("developmenta", "experimental"))
+set.seed(123)
+rhho.test.perm <- pvalRRHO(rrho.test, 1000)
+rhho.test.perm$pval
+```
+
 ```{r echo=F, eval=F}
 # Sanity checking to make sure the log-fold orintation makes sense
-data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "Or30") %>% dplyr::select(heFactors$sample))), caste = heFactors$caste) %>% ggplot(aes(caste,tpm))+geom_boxplot()+ggtitle("Or30") # strongly positve log-fold gene
+data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "Or30") %>% dplyr::select(heFactors$sample))), caste = heFactors$caste) %>% ggplot(aes(caste,tpm))+geom_boxplot()+ggtitle("Development Or30") # strongly positve log-fold gene
 
-data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "LOC410743") %>% dplyr::select(heFactors$sample))), caste = heFactors$caste) %>% ggplot(aes(caste,tpm))+geom_boxplot()+ggtitle("LOC410743") # strongly negative log-fold gene
+data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "LOC410743") %>% dplyr::select(heFactors$sample))), caste = heFactors$caste) %>% ggplot(aes(caste,tpm))+geom_boxplot()+ggtitle("Development LOC410743") # strongly negative log-fold gene
+
+# and in dsx genes
+data.frame(tpm = t(as.vector(tpm %>% dplyr::filter(gene_id == "Or30") %>% dplyr::select(treatments$sample))), trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot()+ggtitle("RNAi Or30") # strongly negative log-fold gene
+
+data.frame(tpm = t(as.vector(tpm %>% dplyr::filter(gene_id == "LOC410743") %>% dplyr::select(treatments$sample))), trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot()+ggtitle("RNAi LOC410743") # strongly negative log-fold gene
 
 #yep, queens have positive log-fold changes. This is lined up with the experimental log-fold, where control bees were expected to be more queen-like in ovarian development.
 ```
 
+# Ovary activation and QMP analysis
 
-## Session info
+```{r qp}
+qp <- read_tsv("data/Honey bee QMP compounds_wide.txt")
+pca.all <- prcomp(qp[,1:6], scale. = T)
+summary(pca.all)
+
+ggbiplot(pca.all, obs.scale = 1, var.scale = 1, size = qp$`Ovary stage`, groups = qp$Treatment, ellipse = TRUE) + scale_color_discrete() + theme(legend.direction = 'horizontal', legend.position = 'top')
+
+qp2 <- cbind(pca.all$x[,1:2],qp %>% dplyr::select(`Ovary stage`, Treatment) %>% mutate(ovary = as.factor(`Ovary stage`) ))
+
+summary(clmm2(ovary ~ Treatment*(PC1+PC2), data = qp2))
+
+ggplot(qp2, aes(as.factor(`Ovary stage`), PC2, fill=Treatment))+geom_line(stat="smooth", linetype = 2, method = "rlm", se=F, aes(color= Treatment, group=Treatment, alpha=.1))+geom_boxplot(outlier.color="white", varwidth = TRUE, position=position_dodge2(preserve = "single"))+theme_bw()+ylab("Queen mandibular pheromone (PCA2)")+xlab("Ovary activation stage")+scale_fill_manual(values=c("steelblue3", "orange"))+scale_color_manual(values=c("steelblue3", "orange"))+guides(alpha = F)+theme(legend.position="top", legend.text=element_text(size=12), axis.text=element_text(size=14))+coord_trans(limy=c(-1.5,.7))+theme(axis.title=element_text(size=14, face="bold"))
+
+ggsave("figures/qp ovary.pdf", height=5, width=5)
+
+loadings <- pca.all$rotation
+sweep(x = abs(loadings), MARGIN = 2, STATS = colSums(abs(loadings)), FUN = "/")[,1:2] %>% kable(output="html", digits=3)
+```
+
+
+# Session info
 ```{r sessioninfo, echo=F}
 sessionInfo <- devtools::session_info() 
 sessionInfo$platform 
