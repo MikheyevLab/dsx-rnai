@@ -12,6 +12,7 @@ output:
 knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=5, fig.height=5 )
 ```
 
+
 ```{r libraries, message = FALSE, warning=FALSE}
 library(tidyverse)
 library(knitr)
@@ -26,12 +27,27 @@ library(GOstats)  # GO terms
 library(GSEABase) # GO terms
 library(devtools) #better session info
 library(WGCNA)    # gene co-expression
-library(RRHO)     # correlation between ranked gene lists EXPERIMENTAL
 library(ggbiplot) # pca plot
 library(ordinal)  # clmm2
 library(MASS)     # rlm for plotting
+library(captioner) # figure captions
+library(ggpubr)   # arranging figures
+library(VennDiagram)
 
 allowWGCNAThreads()
+```
+
+```{r captioner, echo = FALSE, message=FALSE}
+tables <- captioner(prefix = "Table S", auto_space = F)
+figs <- captioner(prefix = "Figure S", auto_space = F)
+figs(name = "knockdwn", caption = "_Dsx_ and _Vg_ expression are lower in treated vs. control bees")
+figs(name = "d3network", caption = "Interactive network of _Dsx_-connected genes")
+tables(name = "moduleTable", caption = "Distribution of genes by module. _Dsx_ containing module is highlighted in red")
+tables(name = "dsxModule", caption = "Genes in the _Dsx_-responsivue module")
+tables(name = "goterms", caption = "Gene Ontology (GO) terms enriched in the _Dsx_-responsive module")
+tables(name = "heModule", caption = "Genes in the _Dsx_-containing module from He et al. Higher values of logFC correspond to greater expression in queens. Genes also found in the Dsx-responsive module from the RNAi experiment are highlighted in yellow")
+tables(name = "clmm2qp", caption = "Cumulative link mixed model analysis of pheromonal composition and ovary development")
+tables(name = "pcaloadings", caption = "Correlation between pheromone components and principal component axes")
 ```
 
 # RNA-seq analysis
@@ -64,7 +80,7 @@ The signal to noise is basically fine even at the lowest levels, so we do not do
 The data are fairly noisy, so we conducted the DGE analysis using two separate alignment/counting philosophies. The more tradional approach uses alignment-based gene quantification using RSEM, and the second one uses a kmer-based approach implemented in Kallisto. Each analysis is shown in a separate tab.
 
 ### RSEM/EdgeR analysis
-
+#### Differential gene expression
 ```{r edgeR}
 counts <- counts %>% filter(! grepl("ERCC", gene_id))
 design <- model.matrix(~treatment, treatments)
@@ -81,11 +97,18 @@ de.tgw$table %>% filter(gene_id  == "Vg")
 de.tgw$table %>% filter(gene_id  == "Mrjp1")
 de.tgw$table %>% filter(gene_id  == "Dnmt3")
 
+```
+#### `r figs("knockdwn") `
+This indicates that _Vg_ was successfully knocked down. We predicted that _Vg_ levels, which are proximally controlled by _Dsx_ should also be lower, and they were.
+
+```{r knockdownTest, echo=F}
 dsxTest <- function(a,b) return(data.frame(p.value = de.tgw$table %>% filter(gene_id  == "Dsx") %>% .$PValue))
-data.frame(tpm = t(subset(tpm, gene_id == "Dsx")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "dsxTest") + xlab("dsRNA injected")+ylab("TPM")
+dsxPlot <- data.frame(tpm = t(subset(tpm, gene_id == "Dsx")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "dsxTest") + xlab("dsRNA injected")+ylab("TPM")
 
 vgTest <- function(a,b) return(data.frame(p.value = de.tgw$table %>% filter(gene_id  == "Vg") %>% .$PValue))
-data.frame(tpm = t(subset(tpm, gene_id == "Vg")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "vgTest") + xlab("dsRNA injected")+ylab("TPM")
+vgPlot <- data.frame(tpm = t(subset(tpm, gene_id == "Vg")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "vgTest") + xlab("dsRNA injected")+ylab("TPM")
+
+ggarrange(dsxPlot, vgPlot, labels = c("A", "B"), ncol = 2, nrow = 1)
 ```
 
 #### Isoform-specific expression using EdgeR
@@ -121,6 +144,7 @@ saveRDS(sleuth_table, "data/sleuth_table.rds")
 ```{r kallistoSleuthTableLoad, echo = FALSE}
 sleuth_table <- readRDS("data/sleuth_table.rds")
 ```
+
 
 ```{r kallistoDsx}
 sleuth_table %>% filter(target_id == "Dsx")
@@ -164,11 +188,15 @@ modNames <- substring(names(MEs), 3)
 moduleTraitCor <- cor(MEs, as.numeric(gsub("GFP",0,gsub("DSX",1,treatments$treatment))), method = "spearman");
 moduleTraitPvalue <- corPvalueStudent(moduleTraitCor, 20)
 (DsxModule <- net$colors[which(colnames(expDat) == "Dsx")])
+```
+
+#### `r tables("moduleTable")`
+```{r moduleTable, echo=F}
 table(net$colors) %>% kable("html", caption = "Number of genes in the different modules. The Dsx-repsonsive module is highlighted", col.names
  = c("Module", "Number of genes")) %>% kable_styling() %>% row_spec(DsxModule+1, background = "red") %>% scroll_box(height = "200px") 
 ```
 
-### Exploring the _Dsx_-containing module
+### Exploring the _Dsx_-sensitive module
 
 ####  Intramodular connectivity and gene significance
 
@@ -185,7 +213,7 @@ connectivityDsxModule <- data.frame(kWithin = Alldegrees[DsxModuleGenes,"kWithin
 dsxModuleGenes <- descriptions %>% filter(gene_id %in% colnames(expDat)[net$colors == DsxModule] ) %>% left_join(de.tgw$table, by = "gene_id") %>% left_join(connectivityDsxModule %>% dplyr::select(gene_id, kWithin), by="gene_id") %>% dplyr::select(gene = gene_id, description = description.x, logFC, kWithin, logCPM) %>% arrange(desc(logFC))  
 highligh <- which(dsxModuleGenes$gene %in% c("Vg", "Dsx", "Dnmt3"))
 ```
-##### Table S1. Genes in the _Dsx_-responsive module{.tabset .tabset-fade}
+##### `r tables("dsxModule")` {.tabset .tabset-fade}
 
 In addition to _Dsx_, this module contains _Vg_, as predicted. It also contains the DNA methyltransferase _Dnmt3_, which has been shown to be involved in queen/worker differentiation during development.
 
@@ -201,10 +229,12 @@ dsxModuleGenes  %>% arrange(desc(kWithin)) %>% kable(format = "html", caption = 
 
 
 ```{r connectivityTest}
-with(connectivityDsxModule, cor.test(logFC, kWithin, method = "s"))
+(mmtest <- with(connectivityDsxModule, cor.test(logFC, kWithin, method = "s")))
 interestingGenes <- c("Dsx", "Vg")
-p <-ggplot(connectivityDsxModule, aes(logFC, kWithin))+geom_point(alpha=0.1) +geom_point(data=subset(connectivityDsxModule, gene_id %in% interestingGenes), colour="red")+theme_bw()+geom_text(data=subset(connectivityDsxModule, gene_id %in% interestingGenes), aes(label = gene_id), nudge_x=.2)+stat_smooth(method="lm", color="blue", se = F)
-ggsave("Dsx module.pdf", width = 5, height = 5)
+
+ggplot(connectivityDsxModule, aes(logFC, kWithin))+geom_hex(show.legend=F) +geom_point(data=subset(connectivityDsxModule, gene_id %in% interestingGenes), colour="red")+theme_bw()+geom_text(data=subset(connectivityDsxModule, gene_id %in% interestingGenes), aes(label = gene_id, color="#fff", size=16), nudge_x=-.25)+guides(color=F, size=F)+xlab("Log2 fold-count (control/treatment)")+ylab("Moudle membership")+annotate(geom="text", x=2, y=78, size = 8, label = paste("rho ==", round(mmtest$estimate,2)),parse = TRUE,hjust = 0)+annotate(geom="text", x=2, y=70, size = 8, label = paste("p ==", scientific(mmtest$p.value)),parse=T,hjust = 0)+theme(axis.title = element_text(size=14, face = "bold"))
+
+#ggsave("Dsx module.pdf", width = 5, height = 5)
 ```
 
 ##### Figure S1. Module membership _vs._ treatment effect
@@ -233,13 +263,14 @@ DsxModuleGo <- hyperGTest(GSEAGOHyperGParams(name = "enriched in Dsx module",
     geneSetCollection=gsc,geneIds = intersect(dsxModuleGenes$gene,universe), universeGeneIds=universe, ontology = "BP",pvalueCutoff = 0.05,conditional = FALSE,testDirection = "over"))
 ```
 
-###### Table S2. GO term enrichmed in _Dsx_-responsive module
+###### `r tables("goterms")`
+
+Virtually all the GO terms enriched in the _Dsx_-responsive module have to do with regulation, and it is full of transcription factors and other regulatory genes. This is expected, given that _Dsx_ is a master regulatory gene.
 
 ```{r goTable}
 summary(DsxModuleGo) %>% kable("html", digits = 3) %>% kable_styling() %>%  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = T) %>% scroll_box(height = "400px") 
 ```
 
-Virtually all the GO terms enriched in the _Dsx_-responsive module have to do with regulation, and it is full of transcription factors and other regulatory genes. This is expected, given that _Dsx_ is a master regulatory gene.
 
 #### Visualizing genes connected to Dsx.
 ```{r networkPlotPrep, eval = F}
@@ -260,8 +291,10 @@ topGenes <- rownames(DsxConnections)[order(DsxConnections$cor, decreasing = T)[1
 modTOM <- readRDS("data/modTOM.rds")
 ```
 
-##### Figure S2. Interactive network of _Dsx_-connected genes
+##### `r figs("d3network")`
+
 This network shows the 30 genes most highly connected to _Dsx, with edge weights proportional to the strength of the connection, and node areas to log counts per million.
+
 ```{r networkPlot, echo = FALSE}
 edges <- data.frame(source = c(), target = c(), value = c())
 for (i in 1:maxTopGenes)
@@ -275,7 +308,7 @@ forceNetwork(Links = edges, Nodes = nodes,
             Value = "value", NodeID = "description",  fontSize = 18, linkDistance = 150, linkWidth =  JS("function(d) { return d.value; }"),colourScale = JS("d3.scaleOrdinal(d3.schemeCategory20);"), Nodesize = "logCPM", radiusCalculation = JS("d.nodesize+3"), fontFamily = "arial", Group = "color", opacity = 0.8, width = 500, height = 500)
 ```
 
-## Comparisons with other studies
+## Comparisons with early development
 
 ### A comparison of honeybee (_Apis mellifera_) queen, worker and drone larvae by RNA-Seq ([He et al. 2017](http://onlinelibrary.wiley.com/doi/10.1111/1744-7917.12557/full/))
 
@@ -355,33 +388,49 @@ sum(bothDsx)/sum(ourDsx)
 
 heDsxModuleGenes <- descriptions %>% filter(gene_id %in% colnames(heExpDat)[heNet$colors == heDsxModule] ) %>% left_join(deHe.tgw$table, by = "gene_id") %>% left_join(heAlldegrees %>% dplyr::select(gene_id, kWithin), by="gene_id") %>% dplyr::select(gene = gene_id, description = description.x, logFC, kWithin, logCPM) %>% arrange(desc(logFC))  
 highligh <- which(heDsxModuleGenes$gene %in% colnames(heExpDat)[net$colors == DsxModule])
+```
+#### `r tables("heModule")`
+```{r heModule, echo=F}
 heDsxModuleGenes  %>% arrange(desc(kWithin)) %>% kable(format = "html", caption = "Genes in the Dsx-containing module from He et al. Higher values of logFC correspond to greater expression in queens Genes also found in the Dsx-responsive module from the RNAi experiment are highlighted in yellow") %>% row_spec(highligh, bold = T, background = "#FFFF00") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>% scroll_box(height = "400px") 
 ```
 
 Yes, roughly half of the genes in the _Dsx_-responsive module form the RNAi experiment are found in the _Dsx_-containing module determined from larval gene expression.
 
-Now, is the _Dsx_-containig module associated with caste-biased gene expression?
+The _Dsx_-containing module is associated with queen-upregulated genes during development, which is in line with the expectations from developing workers.
 
-```{r casteBias}
-# module membership vs logFC
-cor.test(heAlldegrees$kWithin[heNet$colors == heDsxModule], deHe.tgw$table$logFC[heNet$colors == heDsxModule], method = "s")
+```{r}
+setLabels <- c("Development", "Experiment")
+ggsHe <- goodSamplesGenes(heExpDat)
+ggs <- goodSamplesGenes(expDat)
+multiExpr <- list(Development = list(data = heExpDat[,ggsHe$goodGenes]), Experiment = list(data = expDat[,ggs$goodGenes]))
+multiColor <- list(Development = factor(labels2colors(heNet$colors[ggsHe$goodGenes])), Experiment = factor(labels2colors(net$colors[ggs$goodGenes])))
+```
 
-# module membership vs logFC in 
+```{r eval=FALSE}
+mp <- modulePreservation(multiExpr, multiColor, referenceNetworks = 2, nPermutations = 500,randomSeed = 1 , quickCor = 1, verbose = 3, parallelCalculation = FALSE, checkData = FALSE)
+```
+
+```{r loadRDS, echo=F}
+#load pre-computed data
+mp <- readRDS("data/mp2.rds")
+```
+
+```{r modulePreservation}
+exp(mp$preservation$log.p$ref.Experiment$inColumnsAlsoPresentIn.Development[labels2colors(DsxModule),"log.psummary.pres"])
+
 cor.test(heAlldegrees$kWithin[net$colors == DsxModule], deHe.tgw$table$logFC[net$colors == DsxModule], method = "s")
 
-#logFC in experimental vs developmental modules
-bothModules <- left_join(deHe.tgw$table[heNet$colors == heDsxModule,],de.tgw$table[net$colors == DsxModule,] %>% dplyr::select(gene_id, logFC), by = "gene_id") %>% na.omit()
-with(bothModules, cor.test(logFC.x, logFC.y, method="s"))
+cor.test(heAlldegrees$kWithin[heNet$colors == heDsxModule], deHe.tgw$table$logFC[heNet$colors == heDsxModule], method = "s")
+
+module.venn <- venn.diagram(list(development=colnames(heExpDat)[heNet$colors == heDsxModule], experiment=colnames(expDat)[net$colors == DsxModule]), NULL, fill=c("darkmagenta", "darkblue"), alpha=c(0.5,0.5), cex = 2, cat.fontface=4, category.names=c("Developmental", "Experimental"), main="Module overlap with developmental caste determination", fontfamily="sans")
+
+pdf("figures/venn_jpeg.pdf")
+grid.draw(module.venn)
+dev.off()
 ```
 
-This means that the _Dsx_-containing module is associated with queen-upregulated genes during development. The number of genes that overlap in the two modules is not very large, but their logFC are (negatively) correlated.
+The _Dsx_-sensitive module is highly preserved in the developmental data, and its corresponding module is upregulated in queens in early development.
 
-```{r RRHO }
-rrho.test <- RRHO(bothModules[,c("gene_id", "logFC.x")], bothModules[,c("gene_id", "logFC.y")], BY=TRUE, alternative='two.sided', labels = c("developmenta", "experimental"))
-set.seed(123)
-rhho.test.perm <- pvalRRHO(rrho.test, 1000)
-rhho.test.perm$pval
-```
 
 ```{r echo=F, eval=F}
 # Sanity checking to make sure the log-fold orintation makes sense
@@ -398,7 +447,6 @@ data.frame(tpm = t(as.vector(tpm %>% dplyr::filter(gene_id == "LOC410743") %>% d
 ```
 
 # Ovary activation and QMP analysis
-
 ```{r qp}
 qp <- read_tsv("data/Honey bee QMP compounds_wide.txt")
 pca.all <- prcomp(qp[,1:6], scale. = T)
@@ -408,12 +456,21 @@ ggbiplot(pca.all, obs.scale = 1, var.scale = 1, size = qp$`Ovary stage`, groups 
 
 qp2 <- cbind(pca.all$x[,1:2],qp %>% dplyr::select(`Ovary stage`, Treatment) %>% mutate(ovary = as.factor(`Ovary stage`) ))
 
-summary(clmm2(ovary ~ Treatment*(PC1+PC2), data = qp2))
-
 ggplot(qp2, aes(as.factor(`Ovary stage`), PC2, fill=Treatment))+geom_line(stat="smooth", linetype = 2, method = "rlm", se=F, aes(color= Treatment, group=Treatment, alpha=.1))+geom_boxplot(outlier.color="white", varwidth = TRUE, position=position_dodge2(preserve = "single"))+theme_bw()+ylab("Queen mandibular pheromone (PCA2)")+xlab("Ovary activation stage")+scale_fill_manual(values=c("steelblue3", "orange"))+scale_color_manual(values=c("steelblue3", "orange"))+guides(alpha = F)+theme(legend.position="top", legend.text=element_text(size=12), axis.text=element_text(size=14))+coord_trans(limy=c(-1.5,.7))+theme(axis.title=element_text(size=14, face="bold"))
 
-ggsave("figures/qp ovary.pdf", height=5, width=5)
+#ggsave("figures/qp ovary.pdf", height=5, width=5) # raw Figure 1
+```
 
+### `r tables("clmm2qp")`
+
+We see that treatment has a strongly significant effect on ovary activation, and there is an interaction between PC2 and treatment and their relationship to ovary development
+
+```{r clmm}
+summary(clmm2(ovary ~ Treatment*(PC1+PC2), data = qp2))
+```
+
+### `r tables("pcaloadings")`
+```{r pcaloadings}
 loadings <- pca.all$rotation
 sweep(x = abs(loadings), MARGIN = 2, STATS = colSums(abs(loadings)), FUN = "/")[,1:2] %>% kable(output="html", digits=3)
 ```
