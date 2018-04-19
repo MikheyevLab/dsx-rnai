@@ -37,7 +37,7 @@ library(VennDiagram)
 allowWGCNAThreads()
 ```
 
-```{r captioner, echo = FALSE, message=FALSE}
+```{r captioner, echo = FALSE, message = FALSE, warning = FALSE}
 tables <- captioner(prefix = "Table S", auto_space = F)
 figs <- captioner(prefix = "Figure S", auto_space = F)
 figs(name = "knockdwn", caption = "_Dsx_ and _Vg_ expression are lower in treated vs. control bees")
@@ -47,6 +47,7 @@ tables(name = "dsxModule", caption = "Genes in the _Dsx_-responsivue module")
 tables(name = "goterms", caption = "Gene Ontology (GO) terms enriched in the _Dsx_-responsive module")
 tables(name = "heModule", caption = "Genes in the _Dsx_-containing module from He et al. Higher values of logFC correspond to greater expression in queens. Genes also found in the Dsx-responsive module from the RNAi experiment are highlighted in yellow")
 tables(name = "clmm2qp", caption = "Cumulative link mixed model analysis of pheromonal composition and ovary development")
+tables(name = "mortality", caption = "There are no differences in mortality between the treatments")
 tables(name = "pcaloadings", caption = "Correlation between pheromone components and principal component axes")
 ```
 
@@ -103,7 +104,8 @@ This indicates that _Vg_ was successfully knocked down. We predicted that _Vg_ l
 
 ```{r knockdownTest, echo=F}
 dsxTest <- function(a,b) return(data.frame(p.value = de.tgw$table %>% filter(gene_id  == "Dsx") %>% .$PValue))
-dsxPlot <- data.frame(tpm = t(subset(tpm, gene_id == "Dsx")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "dsxTest") + xlab("dsRNA injected")+ylab("TPM")
+dsxPlot <- data.frame(tpm = t(subset(tpm, gene_id == "Dsx")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "dsxTest") + xlab("dsRNA injected")+ylab("TPM")+ stat_summary(fun.y=mean, colour="darkred", geom="point", size=3) + stat_summary(fun.y=mean, colour="red", geom="text", 
+               vjust=-0.7, aes( label=round(..y.., digits=1)))
 
 vgTest <- function(a,b) return(data.frame(p.value = de.tgw$table %>% filter(gene_id  == "Vg") %>% .$PValue))
 vgPlot <- data.frame(tpm = t(subset(tpm, gene_id == "Vg")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "vgTest") + xlab("dsRNA injected")+ylab("TPM")
@@ -327,6 +329,11 @@ deHe.tgw <- exactTest( cdsHe , pair = c( "worker" , "queen" ) )
 deHe.tgw$table$gene_id <- heCounts$gene_id
 deHe.tgw$table <- left_join(deHe.tgw$table, descriptions, by = "gene_id") 
 
+```
+
+The MDS plot is really nice, you can see how the castes start slighly different and then become progressively more so. As reported by He _et al._ there is no differential expression in the 
+
+```{r heDGEcandidate}
 # positive logFC means upregulated in the worker
 deHe.tgw$table %>% filter(gene_id  == "Dsx")
 deHe.tgw$table %>% filter(gene_id  == "Vg")
@@ -337,7 +344,6 @@ data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "Mrjp1") %>% dpl
 data.frame(tpm = t(as.vector(heTPM %>% dplyr::filter(gene_id == "Vg") %>% dplyr::select(heFactors$sample))), caste = heFactors$caste) %>% ggplot(aes(caste,tpm))+geom_boxplot()+ggtitle("Vg")
 ```
 
-The MDS plot is really nice, you can see how the castes start slighly different and then become progressively more so. As reported by He _et al._ there is no differential expression in the 
 
 ```{r heIsoforms}
 dsxIsoforms <- tibble(isoform_id = c("NM_001111255.1", "NM_001134935.1", "NM_001134936.1", "NR_024131.1" ,"XM_006560013.2"), description = c("M", "F2", "B", "RNA", "X1"))
@@ -467,6 +473,12 @@ We see that treatment has a strongly significant effect on ovary activation, and
 
 ```{r clmm}
 summary(clmm2(ovary ~ Treatment*(PC1+PC2), data = qp2))
+```
+
+### `r tables("mortality")`
+```{r bm}
+bm <- read_tsv("data/DSX_RNAi_Mortality.txt", col_types = cols())
+summary(glm(Mortality ~ 1 + Treatment,  data = bm, binomial(link= "logit")))
 ```
 
 ### `r tables("pcaloadings")`
