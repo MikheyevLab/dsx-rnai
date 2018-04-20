@@ -265,7 +265,7 @@ DsxModuleGo <- hyperGTest(GSEAGOHyperGParams(name = "enriched in Dsx module",
     geneSetCollection=gsc,geneIds = intersect(dsxModuleGenes$gene,universe), universeGeneIds=universe, ontology = "BP",pvalueCutoff = 0.05,conditional = FALSE,testDirection = "over"))
 ```
 
-###### `r tables("goterms")`
+##### `r tables("goterms")`
 
 Virtually all the GO terms enriched in the _Dsx_-responsive module have to do with regulation, and it is full of transcription factors and other regulatory genes. This is expected, given that _Dsx_ is a master regulatory gene.
 
@@ -460,8 +460,21 @@ summary(pca.all)
 
 ggbiplot(pca.all, obs.scale = 1, var.scale = 1, size = qp$`Ovary stage`, groups = qp$Treatment, ellipse = TRUE) + scale_color_discrete() + theme(legend.direction = 'horizontal', legend.position = 'top')
 
-qp2 <- cbind(pca.all$x[,1:2],qp %>% dplyr::select(`Ovary stage`, Treatment) %>% mutate(ovary = as.factor(`Ovary stage`) ))
+qp2 <- cbind(pca.all$x[,1:5],qp %>% dplyr::select(`Ovary stage`, Treatment) %>% mutate(ovary = as.factor(`Ovary stage`) ))
 
+```
+Choose the number of principal components for principal component regression
+```{r choosePCA}
+first <- clmm2(ovary ~ Treatment*(PC1), data = qp2)
+second <- clmm2(ovary ~ Treatment*(PC1+PC2), data = qp2)
+third <- clmm2(ovary ~ Treatment*(PC1+PC2+PC3), data = qp2)
+anova(a,b)
+anova(b,c)
+```
+
+Adding the first two principal components improves overall model fit, adding the third does not
+
+```{r qpPlot}
 ggplot(qp2, aes(as.factor(`Ovary stage`), PC2, fill=Treatment))+geom_line(stat="smooth", linetype = 2, method = "rlm", se=F, aes(color= Treatment, group=Treatment, alpha=.1))+geom_boxplot(outlier.color="white", varwidth = TRUE, position=position_dodge2(preserve = "single"))+theme_bw()+ylab("Queen mandibular pheromone (PCA2)")+xlab("Ovary activation stage")+scale_fill_manual(values=c("steelblue3", "orange"))+scale_color_manual(values=c("steelblue3", "orange"))+guides(alpha = F)+theme(legend.position="top", legend.text=element_text(size=12), axis.text=element_text(size=14))+coord_trans(limy=c(-1.5,.7))+theme(axis.title=element_text(size=14, face="bold"))
 
 #ggsave("figures/qp ovary.pdf", height=5, width=5) # raw Figure 1
