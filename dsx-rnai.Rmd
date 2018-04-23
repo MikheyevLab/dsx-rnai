@@ -17,7 +17,7 @@ knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=5, fig.height=5
 library(tidyverse)
 library(knitr)
 library(kableExtra)
-ibrary(ggplot2)
+library(ggplot2)
 library(reshape2)
 library(corrplot)
 library(RColorBrewer)
@@ -45,6 +45,7 @@ allowWGCNAThreads()
 tables <- captioner(prefix = "Table S", auto_space = F)
 figs <- captioner(prefix = "Figure S", auto_space = F)
 figs(name = "knockdwn", caption = "_Dsx_ and _Vg_ expression are lower in treated vs. control bees")
+figs(name = "pheroCorr", caption = "Correlation matrix between individual pheromone components")
 figs(name = "d3network", caption = "Interactive network of _Dsx_-connected genes")
 tables(name = "moduleTable", caption = "Distribution of genes by module. _Dsx_ containing module is highlighted in red")
 tables(name = "dsxModule", caption = "Genes in the _Dsx_-responsivue module")
@@ -176,22 +177,21 @@ sleuth_table %>% filter(target_id == "Dsx")
 
 Both quantification approaches provide the same result, _Dsx_ is upregulated in the control bees, and so is _Vg_ (as predicted).
 
-
-#Mortality between groups
-```{r bm}
-
-bm<-read_tsv("https://github.com/marivelasque/dsx-rnai/raw/master/data/DSX_RNAi_Mortality.txt")
-
-summary(glm(Mortality ~ 1 + Treatment,  data = bm, binomial(link= "logit")))
-```
-## Pheromonal analysis
+# Ovary activation and QMP analysis
 ```{r qp}
+qp <- read_tsv("data/Honey bee QMP compounds_wide.txt", col_names = cols())
+pca.all <- prcomp(qp[,1:6], scale. = T)
+summary(pca.all)
+
+qp2 <- cbind(pca.all$x[,1:5],qp %>% dplyr::select(`Ovary stage`, Treatment) %>% mutate(ovary = as.factor(`Ovary stage`) ))
+```
+
+### `r figs("pheroCorr")` 
+```{r qpCorr}
 
 M<-cor(qp[, 1:6])
 
-head(round(M,2))
-colnames(M) <- c( "10-HDAA", "9-HDA", "HOB", "10-HDA", "HVA", "9-ODA")
-rownames(M) <- c( "10-HDAA", "9-HDA", "HOB", "10-HDA", "HVA", "9-ODA")
+colnames(M) <- rownames(M) <- c( "10-HDAA", "9-HDA", "HOB", "10-HDA", "HVA", "9-ODA")
 
 cor.mtest <- function(mat, ...) {
   mat <- as.matrix(mat)
@@ -209,28 +209,14 @@ cor.mtest <- function(mat, ...) {
 }
 
 p.mat <- cor.mtest(qp[, 1:6]) # p-value correlation matrix
-head(p.mat[, 1:6])
-
-corrplot(M, type="upper", order="hclust", 
-         p.mat = p.mat, sig.level = 0.01, insig = "blank")
 
 col <- colorRampPalette(c("#4477AA", "#77AADD", "#FFFFFF", "#EE9988","#BB4444"))
 
-corrplot(M, method="color", col=col(200),  
+corrplot::corrplot(M, method="color", col=col(200),  
          type="lower", order="hclust", outline=T, mar = c(1, 1, 1, 7),
          addCoef.col = "black", tl.col="black", tl.srt=80, p.mat = p.mat, sig.level = 0.01, insig = "n",diag=FALSE)
 ```
 
-# Ovary activation and QMP analysis
-```{r qp}
-qp <- read_tsv("data/Honey bee QMP compounds_wide.txt")
-pca.all <- prcomp(qp[,1:6], scale. = T)
-summary(pca.all)
-
-ggbiplot(pca.all, obs.scale = 1, var.scale = 1, size = qp$`Ovary stage`, groups = qp$Treatment, ellipse = TRUE) + scale_color_discrete() + theme(legend.direction = 'horizontal', legend.position = 'top')
-
-qp2 <- cbind(pca.all$x[,1:5],qp %>% dplyr::select(`Ovary stage`, Treatment) %>% mutate(ovary = as.factor(`Ovary stage`) ))
-```
 Choose the number of principal components for principal component regression
 ```{r choosePCA}
 first <- clmm2(ovary ~ Treatment*(PC1), data = qp2)
@@ -565,9 +551,14 @@ deHeDay4.tgw <- exactTest( cdsHeDay4 , pair = c( "worker" , "queen" ) )
 deHeDay4.tgw$table$gene_id <- heCounts$gene_id
 deHeDay4.tgw$table <- left_join(deHeDay4.tgw$table, descriptions, by = "gene_id") 
 
+# module membership in our Dsx module in He et al data
 cor.test(heAlldegrees$kWithin[net$colors == DsxModule], deHeDay4.tgw$table$logFC[net$colors == DsxModule], method = "s")
 
+# module membership in He et al Dsx module in He et al data
 cor.test(heAlldegrees$kWithin[heNet$colors == heDsxModule], deHeDay4.tgw$table$logFC[heNet$colors == heDsxModule], method = "s")
+
+# module membership in He et al Dsx module in He et al data
+cor.test(heAlldegrees$kWithin[net$colors == DsxModule & heNet$colors == heDsxModule], deHeDay4.tgw$table$logFC[net$colors == DsxModule & heNet$colors == heDsxModule], method = "s")
 
 module.venn <- venn.diagram(list(development=colnames(heExpDat)[heNet$colors == heDsxModule], experiment=colnames(expDat)[net$colors == DsxModule]), NULL, fill=c("darkmagenta", "darkblue"), alpha=c(0.5,0.5), cex = 2, cat.fontface=4, category.names=c("Developmental", "Experimental"), main="Module overlap with developmental caste determination", fontfamily="sans")
 
