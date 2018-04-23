@@ -17,6 +17,10 @@ knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=5, fig.height=5
 library(tidyverse)
 library(knitr)
 library(kableExtra)
+ibrary(ggplot2)
+library(reshape2)
+library(corrplot)
+library(RColorBrewer)
 library(sleuth)   # gene expression
 library(edgeR)    # gene expression
 library(qvalue)   # multiple comparisons
@@ -172,6 +176,50 @@ sleuth_table %>% filter(target_id == "Dsx")
 
 Both quantification approaches provide the same result, _Dsx_ is upregulated in the control bees, and so is _Vg_ (as predicted).
 
+
+#Mortality between groups
+```{r bm}
+
+bm<-read_tsv("https://github.com/marivelasque/dsx-rnai/raw/master/data/DSX_RNAi_Mortality.txt")
+
+summary(glm(Mortality ~ 1 + Treatment,  data = bm, binomial(link= "logit")))
+```
+## Pheromonal analysis
+```{r qp}
+
+M<-cor(qp[, 1:6])
+
+head(round(M,2))
+colnames(M) <- c( "10-HDAA", "9-HDA", "HOB", "10-HDA", "HVA", "9-ODA")
+rownames(M) <- c( "10-HDAA", "9-HDA", "HOB", "10-HDA", "HVA", "9-ODA")
+
+cor.mtest <- function(mat, ...) {
+  mat <- as.matrix(mat)
+  n <- ncol(mat)
+  p.mat<- matrix(NA, n, n)
+  diag(p.mat) <- 0
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      tmp <- cor.test(mat[, i], mat[, j], ...)
+      p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+    }
+  }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+
+p.mat <- cor.mtest(qp[, 1:6]) # p-value correlation matrix
+head(p.mat[, 1:6])
+
+corrplot(M, type="upper", order="hclust", 
+         p.mat = p.mat, sig.level = 0.01, insig = "blank")
+
+col <- colorRampPalette(c("#4477AA", "#77AADD", "#FFFFFF", "#EE9988","#BB4444"))
+
+corrplot(M, method="color", col=col(200),  
+         type="lower", order="hclust", outline=T, mar = c(1, 1, 1, 7),
+         addCoef.col = "black", tl.col="black", tl.srt=80, p.mat = p.mat, sig.level = 0.01, insig = "n",diag=FALSE)
+```
 
 # Ovary activation and QMP analysis
 ```{r qp}
