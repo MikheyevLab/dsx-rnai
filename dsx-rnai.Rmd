@@ -51,7 +51,7 @@ tables(name = "mortality", caption = "There are no differences in mortality betw
 tables(name = "pcaloadings", caption = "Correlation between pheromone components and principal component axes")
 ```
 
-# RNA-seq analysis
+# Validation of knockdown
 
 ## QC using RSEM data
 ```{r qc, message = FALSE} 
@@ -68,7 +68,7 @@ ggplot(ercc, aes(observed+1, expected+1, color=as.factor(library))) + geom_point
 cutoff <- seq(0,5,by=0.1)
 r <- c()
 for (i in cutoff) {
-  keepGenes <- ercc %>% group_by(gene_id, library) %>% summarise(all_mean = mean(observed)) %>% filter(all_mean > i) %>% .$gene_id %>% unique
+  keepGenes <- ercc %>% group_by(gene_id, library) %>% dplyr::summarise(all_mean = mean(observed)) %>% dplyr::filter(all_mean > i) %>% .$gene_id %>% unique
   r <- c(r, summary(lm(log2(observed+1)~log2(expected+1), data=subset(ercc, gene_id %in% keepGenes)))$r.squared)
 }
 plot(cutoff,r)
@@ -95,22 +95,40 @@ de.tgw$table$gene_id <- counts$gene_id
 de.tgw$table <- left_join(de.tgw$table, descriptions, by = "gene_id") 
 de.tgw$table %>% filter(gene_id  == "Dsx")
 de.tgw$table %>% filter(gene_id  == "Vg")
-de.tgw$table %>% filter(gene_id  == "Mrjp1")
-de.tgw$table %>% filter(gene_id  == "Dnmt3")
 
+```
+
+These genes have been knocked down by RNAi in larvae to demonstrate their effects on caste
+```{r rnaiGenes}
+de.tgw$table %>% filter(gene_id  == "Mrjp1") # Kamakura
+de.tgw$table %>% filter(gene_id  == "Dnmt3") # Kucharski et al. 
+de.tgw$table %>% filter(gene_id  == "LOC408438") # IRS (Wolschin et al)
+de.tgw$table %>% filter(gene_id  == "LOC100577393") # epidermal growth factor receptor-like (Kamakura)
+de.tgw$table %>% filter(gene_id  == "LOC409393") # TOR (Patel et al)
+de.tgw$table %>% filter(gene_id  == "HEX70b") # Cameron et al. ; Martins et al, this gene has worker-biased expression in larvae
 ```
 #### `r figs("knockdwn") `
 This indicates that _Vg_ was successfully knocked down. We predicted that _Vg_ levels, which are proximally controlled by _Dsx_ should also be lower, and they were.
 
 ```{r knockdownTest, echo=F}
-dsxTest <- function(a,b) return(data.frame(p.value = de.tgw$table %>% filter(gene_id  == "Dsx") %>% .$PValue))
+dsxTest <- function(a,b) return(data.frame(p.value = de.tgw$table %>% filter(gene_id  == "Dsx") %>% .$PValue/2))
 dsxPlot <- data.frame(tpm = t(subset(tpm, gene_id == "Dsx")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "dsxTest") + xlab("dsRNA injected")+ylab("TPM")+ stat_summary(fun.y=mean, colour="darkred", geom="point", size=3) + stat_summary(fun.y=mean, colour="red", geom="text", 
                vjust=-0.7, aes( label=round(..y.., digits=1)))
 
-vgTest <- function(a,b) return(data.frame(p.value = de.tgw$table %>% filter(gene_id  == "Vg") %>% .$PValue))
+vgTest <- function(a,b) return(data.frame(p.value = de.tgw$table %>% filter(gene_id  == "Vg") %>% .$PValue/2))
 vgPlot <- data.frame(tpm = t(subset(tpm, gene_id == "Vg")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "vgTest") + xlab("dsRNA injected")+ylab("TPM")
 
 ggarrange(dsxPlot, vgPlot, labels = c("A", "B"), ncol = 2, nrow = 1)
+
+```
+
+```{r Figure1}
+dsxVg <- data.frame(Vg = t(subset(tpm, gene_id == "Vg")[,as.character(treatments$sample)]), Dsx = t(subset(tpm, gene_id == "Dsx")[,as.character(treatments$sample)]), Treatment = treatments$treatment) 
+dsxVgplot <- dsxVg %>% ggplot(aes(Dsx, Vg, color=Treatment))+geom_point() +theme_bw()+scale_color_manual(values=c("steelblue3", "orange"))  + xlim(0,70)
+dsxPlot2 <- data.frame(tpm = t(subset(tpm, gene_id == "Dsx")[,as.character(treatments$sample)]) , trt = treatments$treatment) %>% ggplot(aes(trt,tpm, fill=trt))+geom_boxplot() + geom_signif(comparisons = list(c("DSX", "GFP")), test = "dsxTest") + xlab("dsRNA injected")+ylab("TPM")+scale_fill_manual(values=c("steelblue3", "orange"))+theme_bw()+guides(fill=FALSE)+coord_flip() + ylim(00,70)
+ggarrange(dsxPlot2, dsxVgplot, labels = c("A", "B"), ncol = 1, nrow = 2, heights = c(1,2), common.legend = T)
+ggsave("figures/knockdown.pdf",height=4,width=4,useDingbats=FALSE)
+with(dsxVg, cor.test(Dsx,Vg))
 ```
 
 #### Isoform-specific expression using EdgeR
@@ -154,7 +172,73 @@ sleuth_table %>% filter(target_id == "Dsx")
 
 Both quantification approaches provide the same result, _Dsx_ is upregulated in the control bees, and so is _Vg_ (as predicted).
 
-## Weighted gene co-expression analysis
+
+# Ovary activation and QMP analysis
+```{r qp}
+qp <- read_tsv("data/Honey bee QMP compounds_wide.txt")
+pca.all <- prcomp(qp[,1:6], scale. = T)
+summary(pca.all)
+
+ggbiplot(pca.all, obs.scale = 1, var.scale = 1, size = qp$`Ovary stage`, groups = qp$Treatment, ellipse = TRUE) + scale_color_discrete() + theme(legend.direction = 'horizontal', legend.position = 'top')
+
+qp2 <- cbind(pca.all$x[,1:5],qp %>% dplyr::select(`Ovary stage`, Treatment) %>% mutate(ovary = as.factor(`Ovary stage`) ))
+```
+Choose the number of principal components for principal component regression
+```{r choosePCA}
+first <- clmm2(ovary ~ Treatment*(PC1), data = qp2)
+second <- clmm2(ovary ~ Treatment*(PC1+PC2), data = qp2)
+third <- clmm2(ovary ~ Treatment*(PC1+PC2+PC3), data = qp2)
+anova(first,second)
+anova(second,third)
+```
+
+Adding the first two principal components improves overall model fit, adding the third does not
+
+```{r qpPlot, eval = F}
+ggplot(qp2, aes(as.factor(`Ovary stage`), PC2, fill=Treatment))+geom_line(stat="smooth", linetype = 2, method = "rlm", se=F, aes(color= Treatment, group=Treatment, alpha=.1))+geom_boxplot(outlier.color="white", varwidth = TRUE, position=position_dodge2(preserve = "single"))+theme_bw()+ylab("Queen mandibular pheromone (PCA2)")+xlab("Ovary activation stage")+scale_fill_manual(values=c("steelblue3", "orange"))+scale_color_manual(values=c("steelblue3", "orange"))+guides(alpha = F)+theme(legend.position="top", legend.text=element_text(size=12), axis.text=element_text(size=14))+coord_trans(limy=c(-1.5,.7))+theme(axis.title=element_text(size=14, face="bold"))
+
+#ggsave("figures/qp ovary.pdf", height=5, width=5) # raw Figure 1
+```
+
+### `r tables("clmm2qp")`
+
+We see that treatment has a strongly significant effect on ovary activation, and there is an interaction between PC2 and treatment and their relationship to ovary development
+
+```{r clmm}
+clmm.mod <- clmm2(ovary ~ Treatment*(PC1+PC2), data = qp2)
+summary(clmm.mod)
+```
+
+### `r tables("mortality")`
+```{r bm}
+bm <- read_tsv("data/DSX_RNAi_Mortality.txt", col_types = cols())
+summary(glm(Mortality ~ 1 + Treatment,  data = bm, binomial(link= "logit")))
+```
+
+### `r tables("pcaloadings")`
+```{r pcaloadings}
+loadings <- pca.all$rotation
+sweep(x = abs(loadings), MARGIN = 2, STATS = colSums(abs(loadings)), FUN = "/")[,1:2] %>% kable(output="html", digits=3)
+```
+
+Figure 2 
+```{r}
+library(gridExtra)
+ovaryPlot <- ggplot(qp2, aes(x=as.factor(`Ovary stage`), fill=Treatment))+geom_histogram(stat="count",position=position_dodge2(preserve = "single"))+scale_fill_manual(values=c("steelblue3", "orange"))+theme_bw()+coord_flip()+xlab("Ovary activation stage")
+
+qpPlot <- ggplot(qp2, aes(as.factor(`Ovary stage`), PC2, fill=Treatment))+geom_line(stat="smooth", linetype = 2, method = "rlm", se=F, aes(color= Treatment, group=Treatment, alpha=.1))+geom_boxplot(outlier.color="white",  position=position_dodge2(preserve = "single"))+theme_bw()+ylab("Queen mandibular pheromone (PCA2)")+xlab("")+scale_fill_manual(values=c("steelblue3", "orange"))+scale_color_manual(values=c("steelblue3", "orange"))+guides(alpha = F)+coord_flip(ylim=c(-1.5,.7))
+
+pheroMeans <- qp %>% dplyr::select(`10-HDAA`, `9-HDA`,HOB,`10-HDA`,HVA,`9-ODA`)  %>% colMeans()
+pheroMeans <- data.frame(mean = pheroMeans, compound = names(pheroMeans))
+
+loadingsPlot <-   sweep(x = abs(loadings), MARGIN = 2, STATS = colSums(abs(loadings)), FUN = "/")[,1:2] %>%  as.data.frame %>% rownames_to_column(var="compound") %>% gather(key="PC", value="loadings", -compound) %>% mutate(type = ifelse(compound %in% c("HOB", "9-HDA", "HVA", "9-ODA"), "queen", "worker")) %>% left_join(pheroMeans, by="compound")  %>% filter(PC == "PC2") %>% ggplot(aes(PC,compound))+geom_point(aes(fill=loadings, color=type,size=mean),pch=21,stroke = 1)+scale_fill_gradient(low="white",high="magenta")+scale_color_manual(values=c("red","blue"))+theme_bw()+theme(axis.title.y=element_blank()) + scale_size_continuous(range = c(2,6))+guides(size=F)+ coord_flip()+ theme(legend.direction="horizontal")
+
+pdf("figures/Fig2.pdf", height=5,width=7, useDingbats=F)
+grid.arrange(arrangeGrob(ggarrange(ovaryPlot, qpPlot, labels = c("A", "C"), ncol = 2, nrow = 1, common.legend = T )), arrangeGrob(loadingsPlot), ncol=1, heights=c(3, 1))
+dev.off()
+```
+
+# Weighted gene co-expression analysis
 
 We are interested in understanding the netwoks of genes co-expressed with _Dsx_ in honey bees, and to checke whether this network is associated with RNAi treatment. 
 
@@ -192,15 +276,15 @@ moduleTraitPvalue <- corPvalueStudent(moduleTraitCor, 20)
 (DsxModule <- net$colors[which(colnames(expDat) == "Dsx")])
 ```
 
-#### `r tables("moduleTable")`
+### `r tables("moduleTable")`
 ```{r moduleTable, echo=F}
 table(net$colors) %>% kable("html", caption = "Number of genes in the different modules. The Dsx-repsonsive module is highlighted", col.names
  = c("Module", "Number of genes")) %>% kable_styling() %>% row_spec(DsxModule+1, background = "red") %>% scroll_box(height = "200px") 
 ```
 
-### Exploring the _Dsx_-sensitive module
+## Exploring the _Dsx_-sensitive module
 
-####  Intramodular connectivity and gene significance
+###  Intramodular connectivity and gene significance
 
 ```{r connectivity}
 Alldegrees <- intramodularConnectivity.fromExpr(expDat, net$colors, power = SoftPower)
@@ -215,16 +299,16 @@ connectivityDsxModule <- data.frame(kWithin = Alldegrees[DsxModuleGenes,"kWithin
 dsxModuleGenes <- descriptions %>% filter(gene_id %in% colnames(expDat)[net$colors == DsxModule] ) %>% left_join(de.tgw$table, by = "gene_id") %>% left_join(connectivityDsxModule %>% dplyr::select(gene_id, kWithin), by="gene_id") %>% dplyr::select(gene = gene_id, description = description.x, logFC, kWithin, logCPM) %>% arrange(desc(logFC))  
 highligh <- which(dsxModuleGenes$gene %in% c("Vg", "Dsx", "Dnmt3"))
 ```
-##### `r tables("dsxModule")` {.tabset .tabset-fade}
+#### `r tables("dsxModule")` {.tabset .tabset-fade}
 
 In addition to _Dsx_, this module contains _Vg_, as predicted. It also contains the DNA methyltransferase _Dnmt3_, which has been shown to be involved in queen/worker differentiation during development.
 
-###### Sorted by logFC 
+##### Sorted by logFC 
 ```{r dsxTable, echo=F}
 dsxModuleGenes  %>% kable(format = "html", caption = "Genes in the Dsx-containing module. Higher values of logFC correspond to greater expression in control bees. Genes known to be assciated with reproductive division of labor are highlighted in red.") %>% row_spec(highligh, bold = T, color = "white", background = "#D7261E") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>% scroll_box(height = "400px") 
 ```
 
-###### Sorted by intra-modular connectivity
+##### Sorted by intra-modular connectivity
 ```{r dsxTableConnectivity, echo=F}
 dsxModuleGenes  %>% arrange(desc(kWithin)) %>% kable(format = "html", caption = "Genes in the Dsx-containing module. Higher values of logFC correspond to greater expression in control bees. Genes known to be assciated with reproductive division of labor are highlighted in red.") %>% row_spec(highligh, bold = T, color = "white", background = "#D7261E") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>% scroll_box(height = "400px") 
 ```
@@ -239,7 +323,7 @@ ggplot(connectivityDsxModule, aes(logFC, kWithin))+geom_hex(show.legend=F) +geom
 #ggsave("Dsx module.pdf", width = 5, height = 5)
 ```
 
-##### Figure S1. Module membership _vs._ treatment effect
+#### Figure S1. Module membership _vs._ treatment effect
 Hover over the points to reveal gene names. There is a significant correlation between connectivity within this module and log-fold change as a result of RNAi treatment. In other words, this is a _Dsx_-responsive module.
 
 ```{r conectivityFigure, echo = F}
@@ -252,7 +336,7 @@ connectivityDsxModule[connectivityDsxModule$gene_id == "Dsx","interestingLabes"]
 with(connectivityDsxModule, scatterD3(x = logFC, y = kWithin, size_var = interesting, size_range = c(30,100), hover_size = 4, hover_opacity = 1, opacity_var = interesting, col_var = interesting , lab = interestingLabes, tooltip_text = description, legend_width = 0, xlim=c(-1,3), ylim=c(0,100), xlab = "Log2 fold-count", ylab = "Witin-module connectivity"))
 ```
 
-#### GO term enrichment
+### GO term enrichment
 
 ```{r go, warning = FALSE}
 go <- read_tsv("data/go.tsv", col_types = cols()) %>% mutate(evidence = "ISS") %>% dplyr::select(GO=go, evidence,gene=gene_id)
@@ -265,7 +349,7 @@ DsxModuleGo <- hyperGTest(GSEAGOHyperGParams(name = "enriched in Dsx module",
     geneSetCollection=gsc,geneIds = intersect(dsxModuleGenes$gene,universe), universeGeneIds=universe, ontology = "BP",pvalueCutoff = 0.05,conditional = FALSE,testDirection = "over"))
 ```
 
-##### `r tables("goterms")`
+#### `r tables("goterms")`
 
 Virtually all the GO terms enriched in the _Dsx_-responsive module have to do with regulation, and it is full of transcription factors and other regulatory genes. This is expected, given that _Dsx_ is a master regulatory gene.
 
@@ -274,7 +358,7 @@ summary(DsxModuleGo) %>% kable("html", digits = 3) %>% kable_styling() %>%  kabl
 ```
 
 
-#### Visualizing genes connected to Dsx.
+### Visualizing genes connected to Dsx.
 ```{r networkPlotPrep, eval = F}
 maxTopGenes <- 30
 DsxConnections <- data.frame(cor = cor(expDat[,net$colors == DsxModule], expDat[, "Dsx"]), annot = descriptions$description[match(colnames(expDat[,net$colors == DsxModule]), descriptions$gene_id)])
@@ -293,7 +377,7 @@ topGenes <- rownames(DsxConnections)[order(DsxConnections$cor, decreasing = T)[1
 modTOM <- readRDS("data/modTOM.rds")
 ```
 
-##### `r figs("d3network")`
+#### `r figs("d3network")`
 
 This network shows the 30 genes most highly connected to _Dsx, with edge weights proportional to the strength of the connection, and node areas to log counts per million.
 
@@ -421,12 +505,21 @@ mp <- modulePreservation(multiExpr, multiColor, referenceNetworks = 2, nPermutat
 mp <- readRDS("data/mp2.rds")
 ```
 
+
 ```{r modulePreservation}
 exp(mp$preservation$log.p$ref.Experiment$inColumnsAlsoPresentIn.Development[labels2colors(DsxModule),"log.psummary.pres"])
 
-cor.test(heAlldegrees$kWithin[net$colors == DsxModule], deHe.tgw$table$logFC[net$colors == DsxModule], method = "s")
+design <- model.matrix(~caste, heFactors[heFactors$age==4,])
+cdsHeDay4 <- DGEList( heCounts[,heFactors$sample[heFactors$age==4]] , group = heFactors[heFactors$age==4,]$caste[])
+cdsHeDay4 <- calcNormFactors( cdsHeDay4) 
+cdsHeDay4 <- estimateDisp( cdsHeDay4, design)
+deHeDay4.tgw <- exactTest( cdsHeDay4 , pair = c( "worker" , "queen" ) )
+deHeDay4.tgw$table$gene_id <- heCounts$gene_id
+deHeDay4.tgw$table <- left_join(deHeDay4.tgw$table, descriptions, by = "gene_id") 
 
-cor.test(heAlldegrees$kWithin[heNet$colors == heDsxModule], deHe.tgw$table$logFC[heNet$colors == heDsxModule], method = "s")
+cor.test(heAlldegrees$kWithin[net$colors == DsxModule], deHeDay4.tgw$table$logFC[net$colors == DsxModule], method = "s")
+
+cor.test(heAlldegrees$kWithin[heNet$colors == heDsxModule], deHeDay4.tgw$table$logFC[heNet$colors == heDsxModule], method = "s")
 
 module.venn <- venn.diagram(list(development=colnames(heExpDat)[heNet$colors == heDsxModule], experiment=colnames(expDat)[net$colors == DsxModule]), NULL, fill=c("darkmagenta", "darkblue"), alpha=c(0.5,0.5), cex = 2, cat.fontface=4, category.names=c("Developmental", "Experimental"), main="Module overlap with developmental caste determination", fontfamily="sans")
 
@@ -451,55 +544,6 @@ data.frame(tpm = t(as.vector(tpm %>% dplyr::filter(gene_id == "LOC410743") %>% d
 
 #yep, queens have positive log-fold changes. This is lined up with the experimental log-fold, where control bees were expected to be more queen-like in ovarian development.
 ```
-
-# Ovary activation and QMP analysis
-```{r qp}
-qp <- read_tsv("data/Honey bee QMP compounds_wide.txt")
-pca.all <- prcomp(qp[,1:6], scale. = T)
-summary(pca.all)
-
-ggbiplot(pca.all, obs.scale = 1, var.scale = 1, size = qp$`Ovary stage`, groups = qp$Treatment, ellipse = TRUE) + scale_color_discrete() + theme(legend.direction = 'horizontal', legend.position = 'top')
-
-qp2 <- cbind(pca.all$x[,1:5],qp %>% dplyr::select(`Ovary stage`, Treatment) %>% mutate(ovary = as.factor(`Ovary stage`) ))
-
-```
-Choose the number of principal components for principal component regression
-```{r choosePCA}
-first <- clmm2(ovary ~ Treatment*(PC1), data = qp2)
-second <- clmm2(ovary ~ Treatment*(PC1+PC2), data = qp2)
-third <- clmm2(ovary ~ Treatment*(PC1+PC2+PC3), data = qp2)
-anova(a,b)
-anova(b,c)
-```
-
-Adding the first two principal components improves overall model fit, adding the third does not
-
-```{r qpPlot}
-ggplot(qp2, aes(as.factor(`Ovary stage`), PC2, fill=Treatment))+geom_line(stat="smooth", linetype = 2, method = "rlm", se=F, aes(color= Treatment, group=Treatment, alpha=.1))+geom_boxplot(outlier.color="white", varwidth = TRUE, position=position_dodge2(preserve = "single"))+theme_bw()+ylab("Queen mandibular pheromone (PCA2)")+xlab("Ovary activation stage")+scale_fill_manual(values=c("steelblue3", "orange"))+scale_color_manual(values=c("steelblue3", "orange"))+guides(alpha = F)+theme(legend.position="top", legend.text=element_text(size=12), axis.text=element_text(size=14))+coord_trans(limy=c(-1.5,.7))+theme(axis.title=element_text(size=14, face="bold"))
-
-#ggsave("figures/qp ovary.pdf", height=5, width=5) # raw Figure 1
-```
-
-### `r tables("clmm2qp")`
-
-We see that treatment has a strongly significant effect on ovary activation, and there is an interaction between PC2 and treatment and their relationship to ovary development
-
-```{r clmm}
-summary(clmm2(ovary ~ Treatment*(PC1+PC2), data = qp2))
-```
-
-### `r tables("mortality")`
-```{r bm}
-bm <- read_tsv("data/DSX_RNAi_Mortality.txt", col_types = cols())
-summary(glm(Mortality ~ 1 + Treatment,  data = bm, binomial(link= "logit")))
-```
-
-### `r tables("pcaloadings")`
-```{r pcaloadings}
-loadings <- pca.all$rotation
-sweep(x = abs(loadings), MARGIN = 2, STATS = colSums(abs(loadings)), FUN = "/")[,1:2] %>% kable(output="html", digits=3)
-```
-
 
 # Session info
 ```{r sessioninfo, echo=F}
