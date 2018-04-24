@@ -12,7 +12,6 @@ output:
 knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=5, fig.height=5 )
 ```
 
-
 ```{r libraries, message = FALSE, warning=FALSE}
 library(tidyverse)
 library(knitr)
@@ -179,7 +178,7 @@ Both quantification approaches provide the same result, _Dsx_ is upregulated in 
 
 # Ovary activation and QMP analysis
 ```{r qp}
-qp <- read_tsv("data/Honey bee QMP compounds_wide.txt", col_names = cols())
+qp <- read_tsv("data/Honey bee QMP compounds_wide.txt", col_types = cols())
 pca.all <- prcomp(qp[,1:6], scale. = T)
 summary(pca.all)
 
@@ -363,9 +362,10 @@ Hover over the points to reveal gene names. There is a significant correlation b
 ```{r conectivityFigure, echo = F}
 connectivityDsxModule$interesting <- .2
 connectivityDsxModule$interestingLabes <- "" 
-connectivityDsxModule[connectivityDsxModule$gene_id %in% c("Dsx", "Vg"),"interesting"] <- 1
+connectivityDsxModule[connectivityDsxModule$gene_id %in% c("Dsx", "Vg", "Dnmt3"),"interesting"] <- 1
 connectivityDsxModule[connectivityDsxModule$gene_id == "Vg","interestingLabes"] <- "Vg"
 connectivityDsxModule[connectivityDsxModule$gene_id == "Dsx","interestingLabes"] <- "Dsx"
+connectivityDsxModule[connectivityDsxModule$gene_id == "Dnmt3","interestingLabes"] <- "Dnmt3"
 
 with(connectivityDsxModule, scatterD3(x = logFC, y = kWithin, size_var = interesting, size_range = c(30,100), hover_size = 4, hover_opacity = 1, opacity_var = interesting, col_var = interesting , lab = interestingLabes, tooltip_text = description, legend_width = 0, xlim=c(-1,3), ylim=c(0,100), xlab = "Log2 fold-count", ylab = "Witin-module connectivity"))
 ```
