@@ -228,7 +228,7 @@ anova(second,third)
 Adding the first two principal components improves overall model fit, adding the third does not
 
 ```{r qpPlot, eval = F}
-ggplot(qp2, aes(as.factor(`Ovary stage`), PC2, fill=Treatment))+geom_line(stat="smooth", linetype = 2, method = "rlm", se=F, aes(color= Treatment, group=Treatment, alpha=.1))+geom_boxplot(outlier.color="white", varwidth = TRUE, position=position_dodge2(preserve = "single"))+theme_bw()+ylab("Queen mandibular pheromone (PCA2)")+xlab("Ovary activation stage")+scale_fill_manual(values=c("steelblue3", "orange"))+scale_color_manual(values=c("steelblue3", "orange"))+guides(alpha = F)+theme(legend.position="top", legend.text=element_text(size=12), axis.text=element_text(size=14))+coord_trans(limy=c(-1.5,.7))+theme(axis.title=element_text(size=14, face="bold"))
+ggplot(qp2, aes(as.factor(`Ovary stage`), PC2, fill=Treatment))+geom_line(stat="smooth", linetype = 2, method = "rlm", se=F, aes(color= Treatment, group=Treatment, alpha=.1))+geom_boxplot(outlier.color="white", varwidth = TRUE, position=position_dodge2(preserve = "single"))+theme_bw()+ylab("Queen mandibular pheromone (PC2)")+xlab("Ovary activation stage")+scale_fill_manual(values=c("steelblue3", "orange"))+scale_color_manual(values=c("steelblue3", "orange"))+guides(alpha = F)+theme(legend.position="top", legend.text=element_text(size=12), axis.text=element_text(size=14))+coord_trans(limy=c(-1.5,.7))+theme(axis.title=element_text(size=14, face="bold"))
 
 #ggsave("figures/qp ovary.pdf", height=5, width=5) # raw Figure 1
 ```
