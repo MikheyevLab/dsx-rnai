@@ -33,26 +33,26 @@ library(WGCNA)    # gene co-expression
 library(ggbiplot) # pca plot
 library(ordinal)  # clmm2
 library(MASS)     # rlm for plotting
-library(captioner) # figure captions
 library(ggpubr)   # arranging figures
 library(VennDiagram)
-
 allowWGCNAThreads()
 ```
 
-```{r captioner, echo = FALSE, message = FALSE, warning = FALSE}
+```{r captioner, echo = FALSE, message = FALSE, warning = FALSE, cache=FALSE}
+library(captioner)
 tables <- captioner(prefix = "Table S", auto_space = F)
 figs <- captioner(prefix = "Figure S", auto_space = F)
 figs(name = "knockdwn", caption = "_Dsx_ and _Vg_ expression are lower in treated vs. control bees")
 figs(name = "pheroCorr", caption = "Correlation matrix between individual pheromone components")
 figs(name = "d3network", caption = "Interactive network of _Dsx_-connected genes")
+
+tables(name = "pcaloadings", caption = "Correlation between pheromone components and principal component axes")
+tables(name = "clmm2qp", caption = "Cumulative link mixed model analysis of pheromonal composition and ovary development")
+tables(name = "mortality", caption = "There are no differences in mortality between the treatments")
 tables(name = "moduleTable", caption = "Distribution of genes by module. _Dsx_ containing module is highlighted in red")
 tables(name = "dsxModule", caption = "Genes in the _Dsx_-responsivue module")
 tables(name = "goterms", caption = "Gene Ontology (GO) terms enriched in the _Dsx_-responsive module")
 tables(name = "heModule", caption = "Genes in the _Dsx_-containing module from He et al. Higher values of logFC correspond to greater expression in queens. Genes also found in the Dsx-responsive module from the RNAi experiment are highlighted in yellow")
-tables(name = "clmm2qp", caption = "Cumulative link mixed model analysis of pheromonal composition and ovary development")
-tables(name = "mortality", caption = "There are no differences in mortality between the treatments")
-tables(name = "pcaloadings", caption = "Correlation between pheromone components and principal component axes")
 ```
 
 # Validation of knockdown
@@ -111,7 +111,7 @@ de.tgw$table %>% filter(gene_id  == "LOC100577393") # epidermal growth factor re
 de.tgw$table %>% filter(gene_id  == "LOC409393") # TOR (Patel et al)
 de.tgw$table %>% filter(gene_id  == "HEX70b") # Cameron et al. ; Martins et al, this gene has worker-biased expression in larvae
 ```
-#### `r figs("knockdwn") `
+#### `r figs("knockdwn")`
 This indicates that _Vg_ was successfully knocked down. We predicted that _Vg_ levels, which are proximally controlled by _Dsx_ should also be lower, and they were.
 
 ```{r knockdownTest, echo=F}
@@ -185,6 +185,12 @@ summary(pca.all)
 qp2 <- cbind(pca.all$x[,1:5],qp %>% dplyr::select(`Ovary stage`, Treatment) %>% mutate(ovary = as.factor(`Ovary stage`) ))
 ```
 
+### `r tables("pcaloadings")`
+```{r pcaloadings}
+loadings <- pca.all$rotation
+sweep(x = abs(loadings), MARGIN = 2, STATS = colSums(abs(loadings)), FUN = "/")[,1:2] %>% kable(output="html", digits=3)
+```
+
 ### `r figs("pheroCorr")` 
 ```{r qpCorr}
 
@@ -248,11 +254,6 @@ bm <- read_tsv("data/DSX_RNAi_Mortality.txt", col_types = cols())
 summary(glm(Mortality ~ 1 + Treatment,  data = bm, binomial(link= "logit")))
 ```
 
-### `r tables("pcaloadings")`
-```{r pcaloadings}
-loadings <- pca.all$rotation
-sweep(x = abs(loadings), MARGIN = 2, STATS = colSums(abs(loadings)), FUN = "/")[,1:2] %>% kable(output="html", digits=3)
-```
 
 Figure 2 
 ```{r}
