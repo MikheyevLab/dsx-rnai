@@ -2,17 +2,20 @@
 title: "dsx knockdown analysis"
 output:
   html_document:
-    toc: true
-    toc_float: true
-    toc_depth: 5
     theme: cerulean
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '5'
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=5, fig.height=5 )
 ```
 
-```{r libraries, message = FALSE, warning=FALSE}
+```{r libraries, message = FALSE, warning=FALSE, cache = FALSE}
 library(tidyverse)
 library(knitr)
 library(kableExtra)
@@ -25,7 +28,7 @@ library(edgeR)    # gene expression
 library(qvalue)   # multiple comparisons
 library(ggsignif) # significance boxplots
 library(scatterD3)# interactive scatterplots
-library(networkD3)# interactive networks
+library(networkD3) # force network
 library(GOstats)  # GO terms
 library(GSEABase) # GO terms
 library(devtools) #better session info
@@ -94,7 +97,7 @@ dim(cds)
 cds <- calcNormFactors( cds) 
 plotMDS( cds)
 cds <- estimateDisp( cds, design)
-de.tgw <- exactTest( cds , pair = c( "DSX" , "GFP" ) )
+de.tgw <- exactTest( cds , pair = c( "DSX" , "GFP" ) ) # positive logFC means higher levels in control
 de.tgw$table$gene_id <- counts$gene_id
 de.tgw$table <- left_join(de.tgw$table, descriptions, by = "gene_id") 
 de.tgw$table %>% filter(gene_id  == "Dsx")
@@ -103,13 +106,14 @@ de.tgw$table %>% filter(gene_id  == "Vg")
 ```
 
 These genes have been knocked down by RNAi in larvae to demonstrate their effects on caste
-```{r rnaiGenes}
+```{r rnaiGenes, cache=FALSE}
 de.tgw$table %>% filter(gene_id  == "Mrjp1") # Kamakura
 de.tgw$table %>% filter(gene_id  == "Dnmt3") # Kucharski et al. 
 de.tgw$table %>% filter(gene_id  == "LOC408438") # IRS (Wolschin et al)
 de.tgw$table %>% filter(gene_id  == "LOC100577393") # epidermal growth factor receptor-like (Kamakura)
 de.tgw$table %>% filter(gene_id  == "LOC409393") # TOR (Patel et al)
 de.tgw$table %>% filter(gene_id  == "HEX70b") # Cameron et al. ; Martins et al, this gene has worker-biased expression in larvae
+de.tgw$table %>% filter(gene_id  == "LOC413289") # Duncan et al. Inhibition of notch makes workers reproduce
 ```
 #### `r figs("knockdwn")`
 This indicates that _Vg_ was successfully knocked down. We predicted that _Vg_ levels, which are proximally controlled by _Dsx_ should also be lower, and they were.
@@ -414,7 +418,7 @@ modTOM <- readRDS("data/modTOM.rds")
 
 #### `r figs("d3network")`
 
-This network shows the 30 genes most highly connected to _Dsx, with edge weights proportional to the strength of the connection, and node areas to log counts per million.
+This network shows the 30 genes most highly connected to _Dsx_, with edge weights proportional to the strength of the connection, and node areas to log counts per million.
 
 ```{r networkPlot, echo = FALSE}
 edges <- data.frame(source = c(), target = c(), value = c())
@@ -548,17 +552,15 @@ design <- model.matrix(~caste, heFactors[heFactors$age==4,])
 cdsHeDay4 <- DGEList( heCounts[,heFactors$sample[heFactors$age==4]] , group = heFactors[heFactors$age==4,]$caste[])
 cdsHeDay4 <- calcNormFactors( cdsHeDay4) 
 cdsHeDay4 <- estimateDisp( cdsHeDay4, design)
-deHeDay4.tgw <- exactTest( cdsHeDay4 , pair = c( "worker" , "queen" ) )
+deHeDay4.tgw <- exactTest( cdsHeDay4 , pair = c( "worker" , "queen" ) ) # queen has  positive logFC
 deHeDay4.tgw$table$gene_id <- heCounts$gene_id
 deHeDay4.tgw$table <- left_join(deHeDay4.tgw$table, descriptions, by = "gene_id") 
 
-# module membership in our Dsx module in He et al data
-cor.test(heAlldegrees$kWithin[net$colors == DsxModule], deHeDay4.tgw$table$logFC[net$colors == DsxModule], method = "s")
 
 # module membership in He et al Dsx module in He et al data
 cor.test(heAlldegrees$kWithin[heNet$colors == heDsxModule], deHeDay4.tgw$table$logFC[heNet$colors == heDsxModule], method = "s")
 
-# module membership in He et al Dsx module in He et al data
+# module membership in He et al Dsx module in He et al data for shared module
 cor.test(heAlldegrees$kWithin[net$colors == DsxModule & heNet$colors == heDsxModule], deHeDay4.tgw$table$logFC[net$colors == DsxModule & heNet$colors == heDsxModule], method = "s")
 
 module.venn <- venn.diagram(list(development=colnames(heExpDat)[heNet$colors == heDsxModule], experiment=colnames(expDat)[net$colors == DsxModule]), NULL, fill=c("darkmagenta", "darkblue"), alpha=c(0.5,0.5), cex = 2, cat.fontface=4, category.names=c("Developmental", "Experimental"), main="Module overlap with developmental caste determination", fontfamily="sans")
@@ -570,6 +572,36 @@ dev.off()
 
 The _Dsx_-sensitive module is highly preserved in the developmental data, and its corresponding module is upregulated in queens in early development.
 
+## Comparison with sex bias
+
+A recent study by [Warner et al.](https://www.biorxiv.org/content/early/2018/11/20/454645) found that caste biased genes are associated with sex bias, specifically that queen-biased genes (vs workers) are also more female-biased (vs males). This is interesting, since _Dsx_ proximally controls sex bias, suggesting that the _Dsx_-responsive module may be involved in caste bias as well.
+
+```{r cache=FALSE}
+heFactors <- read_tsv("data/he_factors.tsv", col_types = cols()) %>% filter(caste != "worker")
+design <- model.matrix(~caste, heFactors)
+cdsHe <- DGEList( heCounts[,  heFactors$sample] , group = heFactors$sex)
+cdsHe <- calcNormFactors( cdsHe) 
+cdsHe <- estimateDisp( cdsHe, design)
+deHeSex.tgw <- exactTest( cdsHe , pair = c( "male" , "female" ) ) # queens have positive logFC
+deHeSex.tgw$table$gene_id <- heCounts$gene_id
+deHeSex.tgw$table <- left_join(deHeSex.tgw$table, descriptions, by = "gene_id") 
+
+cor.test(deHeSex.tgw$table[net$colors == DsxModule,"logFC"], de.tgw$table[net$colors == DsxModule,"logFC"])
+
+cor.test(deHeSex.tgw$table$logFC, de.tgw$table$logFC, method="s")
+
+dmel <- read_csv("data/dmel_sexGenes.csv", col_types = cols()) %>% mutate(logFC = -logFC) # data from Warner et al. logFC is female/male, so we swith them to match analysis above
+
+with(left_join(deHeSex.tgw$table, dmel, by = c("gene_id" = "gene_Amel")), cor.test(logFC.x, logFC.y)) # overall the direction of sex bias is conserved, as expected
+
+with(left_join(de.tgw$table[net$colors == DsxModule,], dmel, by = c("gene_id" = "gene_Amel")), cor.test(logFC.x, logFC.y, method = "s"))
+
+with(left_join(de.tgw$table, dmel, by = c("gene_id" = "gene_Amel")), cor.test(logFC.x, logFC.y, method = "s"))
+
+left_join(de.tgw$table[net$colors == DsxModule,], dmel, by = c("gene_id" = "gene_Amel")) %>% ggplot(aes(logFC.x, logFC.y)) + geom_point() + xlim(-1,2) + geom_smooth(se=F, method="rlm")+xlab("Log-fold count experimental treatment (control/knockdown)") + ylab("Log-fold count fruit fly sex bias (female/male)")+theme_bw()
+```
+
+Suprisingly, both the ant and fruit fly gene expression patterns are negatively correlated with those induced by _Dsx_-sensitive module expression. Control bees are more similar to males than they are to 
 
 ```{r echo=F, eval=F}
 # Sanity checking to make sure the log-fold orintation makes sense
