@@ -420,7 +420,7 @@ modTOM <- readRDS("data/modTOM.rds")
 
 This network shows the 30 genes most highly connected to _Dsx_, with edge weights proportional to the strength of the connection, and node areas to log counts per million.
 
-```{r networkPlot, echo = FALSE}
+```{r networkPlotSetup, echo = FALSE}
 edges <- data.frame(source = c(), target = c(), value = c())
 for (i in 1:maxTopGenes)
   for (j in i:maxTopGenes)
@@ -428,9 +428,10 @@ for (i in 1:maxTopGenes)
 edges$value <- edges$value/max(edges$value)*3
 
 nodes <- data.frame(name = rownames(DsxConnections[topGenes,]), description = DsxConnections[topGenes,"annot"], color = c(c("red"),rep("grey", maxTopGenes - 1)), logCPM = de.tgw$table[match(topGenes,de.tgw$table$gene_id),"logCPM"])
+
 forceNetwork(Links = edges, Nodes = nodes,
             Source = "source", Target = "target",
-            Value = "value", NodeID = "description",  fontSize = 18, linkDistance = 150, linkWidth =  JS("function(d) { return d.value; }"),colourScale = JS("d3.scaleOrdinal(d3.schemeCategory20);"), Nodesize = "logCPM", radiusCalculation = JS("d.nodesize+3"), fontFamily = "arial", Group = "color", opacity = 0.8, width = 500, height = 500)
+            Value = "value", NodeID = "description",  fontSize = 18, linkDistance = 150, linkWidth =  JS("function(d) { return d.value; }"), colourScale = JS("d3.scaleOrdinal(d3.schemeCategory20);"), Nodesize = "logCPM", radiusCalculation = JS("d.nodesize+3"), fontFamily = "arial", Group = "color", opacity = 0.8, width = 500, height = 500)
 ```
 
 ## Comparisons with early development
